@@ -22,11 +22,25 @@
         const db = getFirestore(app);
 
         const ACCESS_PASSWORD = "888888"; 
+        
+        // 自动设置近8周日期并查询
+        function setDefaultDatesAndLoad() {
+            let today = new Date();
+            let eightWeeksAgo = new Date();
+            eightWeeksAgo.setDate(today.getDate() - 56);
+            
+            document.getElementById('end-date').value = today.toISOString().split('T')[0];
+            document.getElementById('start-date').value = eightWeeksAgo.toISOString().split('T')[0];
+            
+            window.loadDashboard();
+        }
+
         window.checkPassword = function() {
             const pwd = document.getElementById('pwd-input').value;
             if (pwd === ACCESS_PASSWORD) {
                 document.getElementById('login-overlay').style.display = 'none';
                 sessionStorage.setItem('lfy_auth_dash', 'true');
+                setDefaultDatesAndLoad(); // 登入后自动加载
             } else {
                 alert("密码错误！");
             }
@@ -35,31 +49,29 @@
         window.onload = () => {
             if (sessionStorage.getItem('lfy_auth_dash') === 'true') {
                 document.getElementById('login-overlay').style.display = 'none';
+                setDefaultDatesAndLoad(); // 已登入则直接加载
             }
             document.getElementById('pwd-input').addEventListener('keypress', function (e) {
                 if (e.key === 'Enter') window.checkPassword();
             });
         };
 
-        // Layout rearranged according to the provided image
         const rowDefinitions = [
-            // --- Individual Lines Block ---
             { type: 'line', name: '裁断', id: 'cut', inFactory: true },
             { type: 'line', name: '准备', id: 'prep', inFactory: true },
             { type: 'line', name: '袜套', id: 'sock', inFactory: true },
             ...Array.from({length: 10}, (_, i) => ({ type: 'line', name: `针车A${i+1}`, id: `stitchA${i+1}`, inStitchA: true })),
             { type: 'line', name: '针车A-销样组', id: 'stitchA_sample', inStitchA: true },
-            ...Array.from({length: 12}, (_, i) => ({ type: 'line', name: `针车B${i+11}`, id: `stitchB${i+11}`, inStitchB: true })), // B11 to B22 based on image
-            ...['A','B','C','E','F'].map(c => ({ type: 'line', name: `成型${c}`, id: `mold${c}`, inMold: true })), // A, B, C, E, F based on image
+            ...Array.from({length: 12}, (_, i) => ({ type: 'line', name: `针车B${i+11}`, id: `stitchB${i+11}`, inStitchB: true })),
+            ...['A','B','C','E','F'].map(c => ({ type: 'line', name: `成型${c}`, id: `mold${c}`, inMold: true })),
             { type: 'line', name: '拉帮组', id: 'pull', inFactory: false },
             ...Array.from({length: 5}, (_, i) => { 
                 if (i !== 3) return { type: 'line', name: `组底${i+1}`, id: `bottom${i+1}`, inBottom: true, inFactory: false };
                 return null;
-            }).filter(Boolean), // 1, 2, 3, 5 based on image
+            }).filter(Boolean),
 
-            { type: 'spacer' }, // Adds a visual gap before summaries
+            { type: 'spacer' },
 
-            // --- Summaries Block ---
             { type: 'summary', name: '裁断小计', calc: 'single', targetId: 'cut' },
             { type: 'summary', name: '准备小计', calc: 'single', targetId: 'prep' },
             { type: 'summary', name: '袜套小计', calc: 'single', targetId: 'sock' },
@@ -82,7 +94,7 @@
         window.loadDashboard = async function() {
             const startDateStr = document.getElementById('start-date').value;
             const endDateStr = document.getElementById('end-date').value;
-            if (!startDateStr || !endDateStr) return alert("请选择完整的起止日期范围！");
+            if (!startDateStr || !endDateStr) return;
 
             const start = new Date(startDateStr);
             const end = new Date(endDateStr);
@@ -120,7 +132,7 @@
                         weekDays.push(dateStr);
                     }
                     weeks.push({
-                        title: `${weekStartStr}-${weekEndStr}`, // Removed "第 X 周"
+                        title: `${weekStartStr}-${weekEndStr}`,
                         days: weekDays
                     });
                     curr.setDate(curr.getDate() + 7);
@@ -248,7 +260,6 @@
     </script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0b0f19; margin: 0; padding: 5px; color: #94a3b8; font-size: 12px; }
-        
         .login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(11, 15, 25, 0.95); z-index: 9999; display: flex; align-items: center; justify-content: center; }
         .login-box { background: #161b22; padding: 30px; border-radius: 12px; border: 1px solid #30363d; text-align: center; width: 280px; box-shadow: 0 0 30px rgba(0, 229, 255, 0.1); }
         .login-box input { width: 90%; padding: 10px; margin-bottom: 15px; background: #0d1117; color: #fff; border: 1px solid #30363d; border-radius: 6px; outline: none; }
@@ -280,23 +291,8 @@
         .data-row td { background-color: #111827; }
         .data-row:hover td { background-color: #1f2937; }
         
-        /* Summary Row Styling */
-        .summary-row td { 
-            background-color: #1e293b; /* Slightly lighter background than data rows */
-            color: #e2e8f0; /* Lighter text color */
-            font-weight: bold; 
-            border-top: 2px solid #334155; 
-            border-bottom: 2px solid #334155;
-            font-size: 1.05em; /* Slightly larger text */
-        }
-        
-        /* Specific styling for the very bottom summary rows to distinguish them further if needed */
-        .factory-total-row td {
-            background-color: #0f172a; /* Darker header-like background */
-            color: #00e5ff; /* Cyan text */
-            font-size: 1.1em;
-            border-top: 3px double #00e5ff;
-        }
+        .summary-row td { background-color: #1e293b; color: #e2e8f0; font-weight: bold; border-top: 2px solid #334155; border-bottom: 2px solid #334155; font-size: 1.05em; }
+        .factory-total-row td { background-color: #0f172a; color: #00e5ff; font-size: 1.1em; border-top: 3px double #00e5ff; }
 
         .line-name { text-align: left; padding-left: 10px; color: #e2e8f0; font-weight: bold; border-right: 2px solid #334155; min-width: 100px; }
         .weekly-avg { background-color: #161b22 !important; border-left: 2px solid #334155; font-size: 1.05em; }
@@ -340,7 +336,7 @@
                     </tr>
                 </thead>
                 <tbody id="table-body">
-                    <tr><td colspan="10" style="text-align: center; color: #475569; padding: 40px; font-size: 14px;">请在上方设定起止日期，并点击查询获取数据快照</td></tr>
+                    <tr><td colspan="10" style="text-align: center; color: #475569; padding: 40px; font-size: 14px;">数据加载中...</td></tr>
                 </tbody>
             </table>
         </div>
