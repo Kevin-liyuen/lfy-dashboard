@@ -68,13 +68,12 @@
             ...Array.from({length: 5}, (_, i) => ({ type: 'line', name: `组底${i+1}`, id: `bottom${i+1}`, inFactory: false }))
         ];
 
-        // 全新科技風螢光變色邏輯
         function getColorClass(val) {
             if (val === null || val === undefined || isNaN(val)) return 'val-normal';
-            if (val < 0.8) return 'val-red';          // <80%: 螢光紅
-            if (val >= 0.9 && val < 1.0) return 'val-light-green'; // 90~100: 淺螢光綠(或偏黃)
-            if (val >= 1.0) return 'val-green';       // >=100%: 亮螢光綠
-            return 'val-normal';                      // 80~90: 預設暗灰色
+            if (val < 0.8) return 'val-red';          
+            if (val >= 0.9 && val < 1.0) return 'val-light-green'; 
+            if (val >= 1.0) return 'val-green';       
+            return 'val-normal';                      
         }
 
         window.loadDashboard = async function() {
@@ -233,66 +232,60 @@
         }
     </script>
     <style>
-        /* 科技暗黑風核心設定 */
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0b0f19; margin: 0; padding: 20px; color: #94a3b8; }
+        /* 科技暗黑風核心設定 - 高度壓縮版 */
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0b0f19; margin: 0; padding: 5px; color: #94a3b8; font-size: 12px; }
         
-        /* 登入視窗暗黑化 */
         .login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(11, 15, 25, 0.95); z-index: 9999; display: flex; align-items: center; justify-content: center; }
-        .login-box { background: #161b22; padding: 40px; border-radius: 12px; border: 1px solid #30363d; text-align: center; width: 300px; box-shadow: 0 0 30px rgba(0, 229, 255, 0.1); }
-        .login-box input { width: 90%; padding: 12px; margin-bottom: 20px; background: #0d1117; color: #fff; border: 1px solid #30363d; border-radius: 6px; outline: none; }
+        .login-box { background: #161b22; padding: 30px; border-radius: 12px; border: 1px solid #30363d; text-align: center; width: 280px; box-shadow: 0 0 30px rgba(0, 229, 255, 0.1); }
+        .login-box input { width: 90%; padding: 10px; margin-bottom: 15px; background: #0d1117; color: #fff; border: 1px solid #30363d; border-radius: 6px; outline: none; }
         .login-box input:focus { border-color: #00e5ff; box-shadow: 0 0 8px rgba(0, 229, 255, 0.4); }
-        .login-box button { width: 100%; padding: 12px; background: linear-gradient(90deg, #00d2ff 0%, #3a7bd5 100%); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight:bold; letter-spacing: 2px;}
+        .login-box button { width: 100%; padding: 10px; background: linear-gradient(90deg, #00d2ff 0%, #3a7bd5 100%); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight:bold; letter-spacing: 1px;}
         .login-box button:hover { opacity: 0.9; box-shadow: 0 0 15px rgba(0, 229, 255, 0.5); }
 
-        /* 看板主體 */
-        .dashboard { max-width: 1500px; margin: auto; background: #111827; padding: 30px; border-radius: 12px; border: 1px solid #1f2937; box-shadow: 0 10px 40px rgba(0,0,0,0.8); overflow-x: auto; }
-        .header-bar { border-bottom: 1px solid #334155; padding-bottom: 15px; margin-bottom: 20px; }
-        h2 { color: #00e5ff; margin: 0; text-align: left; font-size: 24px; text-shadow: 0 0 10px rgba(0, 229, 255, 0.3); display: flex; align-items: center; gap: 10px; }
-        h2::before { content: '🌐'; font-size: 28px; }
+        .dashboard { max-width: 98vw; margin: auto; background: #111827; padding: 10px 15px; border-radius: 8px; border: 1px solid #1f2937; box-shadow: 0 5px 20px rgba(0,0,0,0.8); overflow-x: auto; }
+        .header-bar { border-bottom: 1px solid #334155; padding-bottom: 5px; margin-bottom: 10px; }
+        h2 { color: #00e5ff; margin: 0; text-align: left; font-size: 18px; text-shadow: 0 0 10px rgba(0, 229, 255, 0.3); display: flex; align-items: center; gap: 8px; }
+        h2::before { content: '🌐'; font-size: 20px; }
         
         /* 控制列 */
-        .controls { background: #1e293b; padding: 15px; border-radius: 8px; border: 1px solid #334155; display: flex; justify-content: flex-start; gap: 15px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+        .controls { background: #1e293b; padding: 8px 12px; border-radius: 6px; border: 1px solid #334155; display: flex; justify-content: flex-start; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
         .controls span { color: #e2e8f0; font-weight: bold; }
-        .controls input { background: #0f172a; color: #00e5ff; padding: 8px; border: 1px solid #334155; border-radius: 6px; outline: none; }
+        .controls input { background: #0f172a; color: #00e5ff; padding: 4px 6px; border: 1px solid #334155; border-radius: 4px; outline: none; font-size: 12px; }
         .controls input::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
-        .btn-cyan { background: #0891b2; color: white; border: none; border-radius: 6px; padding: 8px 20px; cursor: pointer; font-weight: bold; transition: 0.3s; }
-        .btn-cyan:hover { background: #0ea5e9; box-shadow: 0 0 10px rgba(14, 165, 233, 0.5); }
-        .btn-dark { background: #334155; color: white; border: none; border-radius: 6px; padding: 8px 20px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .btn-cyan { background: #0891b2; color: white; border: none; border-radius: 4px; padding: 5px 12px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .btn-cyan:hover { background: #0ea5e9; box-shadow: 0 0 8px rgba(14, 165, 233, 0.5); }
+        .btn-dark { background: #334155; color: white; border: none; border-radius: 4px; padding: 5px 12px; cursor: pointer; font-weight: bold; transition: 0.3s; }
         .btn-dark:hover { background: #475569; }
 
-        /* 表格與格線設定 */
-        table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 10px; font-size: 14px; white-space: nowrap; }
-        th, td { border: 1px solid #1f2937; padding: 10px; text-align: center; }
+        /* 表格與極致壓縮設定 */
+        table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 5px; white-space: nowrap; }
+        th, td { border: 1px solid #1f2937; padding: 4px 6px; text-align: center; }
         
-        /* 表頭 */
         th { background-color: #0f172a; color: #94a3b8; font-weight: 600; }
-        .week-group-header { background-color: #1e293b !important; color: #00e5ff; letter-spacing: 1px; border-bottom: 2px solid #00e5ff; }
+        .week-group-header { background-color: #1e293b !important; color: #00e5ff; letter-spacing: 1px; border-bottom: 1px solid #00e5ff; }
         .weekly-avg-header { background-color: #161b22; color: #e2e8f0; border-left: 2px solid #334155; }
         
-        /* 列設定 */
-        .section-header-row td { background: #1e293b; border-top: 2px solid #334155; border-bottom: 2px solid #334155; }
+        .section-header-row td { background: #1e293b; border-top: 1px solid #334155; border-bottom: 1px solid #334155; padding-left: 10px !important; }
         .data-row td { background-color: #111827; }
         .data-row:hover td { background-color: #1f2937; }
         .summary-row td { background-color: #161b22; font-weight: bold; border-top: 1px solid #334155; border-bottom: 1px solid #334155; }
         
-        /* 線別名稱與週平均的特殊底色 */
-        .line-name { text-align: left; padding-left: 15px; color: #e2e8f0; font-weight: bold; border-right: 2px solid #334155; }
-        .weekly-avg { background-color: #161b22 !important; border-left: 2px solid #334155; font-size: 1.1em; }
+        .line-name { text-align: left; padding-left: 10px; color: #e2e8f0; font-weight: bold; border-right: 2px solid #334155; min-width: 100px; }
+        .weekly-avg { background-color: #161b22 !important; border-left: 2px solid #334155; font-size: 1.05em; }
 
-        /* --- 核心：螢光數字變色 --- */
-        .val-red { color: #ff4d4f; font-weight: 800; text-shadow: 0 0 8px rgba(255, 77, 79, 0.4); }
-        .val-normal { color: #64748b; font-weight: 500; } /* 80~90: 低調暗灰 */
-        .val-light-green { color: #facc15; font-weight: 800; text-shadow: 0 0 8px rgba(250, 204, 21, 0.4); } /* 圖中99.8%是橘黃色，這裡用螢光黃/淺綠代替 */
-        .val-green { color: #00e676; font-weight: 900; text-shadow: 0 0 10px rgba(0, 230, 118, 0.5); font-size: 1.05em; }
+        /* 螢光數字變色 */
+        .val-red { color: #ff4d4f; font-weight: 800; text-shadow: 0 0 6px rgba(255, 77, 79, 0.4); }
+        .val-normal { color: #64748b; font-weight: 500; } 
+        .val-light-green { color: #facc15; font-weight: 800; text-shadow: 0 0 6px rgba(250, 204, 21, 0.4); } 
+        .val-green { color: #00e676; font-weight: 900; text-shadow: 0 0 8px rgba(0, 230, 118, 0.5); font-size: 1.02em; }
 
-        /* 首列凍結 */
-        .sticky-col { position: sticky; left: 0; background-color: #0f172a !important; z-index: 2; box-shadow: 2px 0 5px rgba(0,0,0,0.5); }
+        .sticky-col { position: sticky; left: 0; background-color: #0f172a !important; z-index: 2; box-shadow: 2px 0 4px rgba(0,0,0,0.5); }
     </style>
 </head>
 <body>
     <div id="login-overlay" class="login-overlay">
         <div class="login-box">
-            <h2 style="justify-content: center; margin-bottom:20px; font-size: 20px;">系统登录</h2>
+            <h2 style="justify-content: center; margin-bottom:15px; font-size: 18px;">系统登录</h2>
             <input type="password" id="pwd-input" placeholder="请输入管理密码 (支持Enter)">
             <button onclick="checkPassword()">进入全厂看板</button>
         </div>
@@ -308,7 +301,7 @@
             <button id="search-btn" class="btn-cyan" onclick="loadDashboard()">查询计算</button>
             <button class="btn-dark" onclick="toggleDetails()">隐藏 / 展开每日明细</button>
         </div>
-        <div>
+        <div style="overflow-x: auto;">
             <table id="dashboard-table">
                 <thead>
                     <tr id="thead-tr-1">
@@ -318,7 +311,7 @@
                     </tr>
                 </thead>
                 <tbody id="table-body">
-                    <tr><td colspan="10" style="text-align: center; color: #475569; padding: 60px; font-size: 16px;">请在上方设定起止日期，并点击查询获取数据快照</td></tr>
+                    <tr><td colspan="10" style="text-align: center; color: #475569; padding: 40px; font-size: 14px;">请在上方设定起止日期，并点击查询获取数据快照</td></tr>
                 </tbody>
             </table>
         </div>
