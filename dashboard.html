@@ -3,10 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>全局生产线快照看板</title>
+    <title>全局生产线快照看板 (动态双厂 RTDB 版)</title>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        // ★ 核心改動：替換為 Realtime Database SDK
+        import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 
         const firebaseConfig = {
           apiKey: "AIzaSyAMckSKafxLho2CR5PVe8KLJ6dYAEIJiZI",
@@ -19,12 +20,10 @@
         };
 
         const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
+        const db = getDatabase(app); 
         const ACCESS_PASSWORD = "888888"; 
         
         let rowDefinitions = []; 
-        
-        // 取得當前選擇的廠區 (預設為 LFY)
         window.currentFactory = localStorage.getItem('selected_factory') || 'lfy';
 
         window.checkPassword = function() {
@@ -50,27 +49,23 @@
             });
         };
 
-        // 切換廠區
         window.switchFactory = function() {
             window.currentFactory = document.getElementById('factory-select').value;
             localStorage.setItem('selected_factory', window.currentFactory);
-            // 清空舊畫面並重新載入該廠設定
             document.getElementById('table-body').innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 40px;">切换厂区中，数据加载中...</td></tr>';
             initDashboardConfig();
         }
 
         async function initDashboardConfig() {
-            // 更新看板標題
             const factoryName = window.currentFactory === 'lfy' ? 'LFY 厂' : 'LY 厂';
             document.getElementById('board-title').innerHTML = `🌐 全局快照多周看板 - <span style="color:#facc15;">${factoryName}</span>`;
 
             try {
-                // 依據廠區讀取不同的 Config (LFY 讀 layout, LY 讀 ly_layout)
                 const layoutDocId = window.currentFactory === 'lfy' ? "layout" : "ly_layout";
-                const docSnap = await getDoc(doc(db, "system_config", layoutDocId));
+                const snapshot = await get(ref(db, 'system_config/' + layoutDocId));
                 
-                if (docSnap.exists()) {
-                    const config = docSnap.data();
+                if (snapshot.exists()) {
+                    const config = snapshot.val();
                     rowDefinitions = [];
 
                     config.groups.forEach(group => {
@@ -172,11 +167,10 @@
             btn.innerText = "计算中...";
             
             try {
-                // 依據廠區讀取不同的數據表 (LFY 讀 production_data, LY 讀 ly_production_data)
                 const collectionName = window.currentFactory === 'lfy' ? "production_data" : "ly_production_data";
-                const querySnapshot = await getDocs(collection(db, collectionName));
-                const dbData = {};
-                querySnapshot.forEach(doc => { dbData[doc.id] = doc.data(); });
+                // ★ 核心改動：RTDB 讀取整個集合的語法
+                const snapshot = await get(ref(db, collectionName));
+                const dbData = snapshot.exists() ? snapshot.val() : {};
 
                 let weeks = [];
                 let curr = new Date(start);
@@ -268,19 +262,13 @@
             }
         }
 
-        // 修改後的動態折疊功能 (解決標題跑位問題)
         window.toggleDetails = function() {
             const cols = document.querySelectorAll('.daily-col');
-            // 判斷目前是否為隱藏狀態
             const isCurrentlyHidden = cols[0] && cols[0].style.display === 'none';
-            
-            // 切換每日欄位的顯示狀態
             cols.forEach(col => { col.style.display = isCurrentlyHidden ? 'table-cell' : 'none'; });
 
-            // ★ 動態修改頂部日期標題的橫跨格數 (colspan)
             const weekHeaders = document.querySelectorAll('.week-group-header');
             weekHeaders.forEach(th => {
-                // 如果準備展開，跨 7 格 (6天+1綜合)；如果隱藏，只跨 1 格 (綜合)
                 th.colSpan = isCurrentlyHidden ? 7 : 1; 
             });
         }
@@ -296,7 +284,6 @@
         .header-bar { border-bottom: 1px solid #334155; padding-bottom: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
         h2 { color: #00e5ff; margin: 0; text-align: left; font-size: 18px; text-shadow: 0 0 10px rgba(0, 229, 255, 0.3); }
         
-        /* 廠區選擇器風格 */
         .factory-select { background: #1e293b; color: #facc15; border: 1px solid #facc15; padding: 6px 12px; border-radius: 4px; font-size: 14px; font-weight: bold; cursor: pointer; outline: none; box-shadow: 0 0 10px rgba(250, 204, 21, 0.2); }
         .factory-select option { background: #0f172a; color: #fff; }
 
@@ -346,7 +333,6 @@
     <div class="dashboard">
         <div class="header-bar">
             <h2 id="board-title">🌐 全局快照多周看板</h2>
-            <!-- ★ 新增的廠區切換器 -->
             <select id="factory-select" class="factory-select" onchange="switchFactory()">
                 <option value="lfy">切换: LFY 厂</option>
                 <option value="ly">切换: LY 厂</option>
