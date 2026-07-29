@@ -41,31 +41,34 @@
             });
         };
 
+        // Layout rearranged according to the provided image
         const rowDefinitions = [
+            // --- Individual Lines Block ---
             { type: 'line', name: '裁断', id: 'cut', inFactory: true },
             { type: 'line', name: '准备', id: 'prep', inFactory: true },
             { type: 'line', name: '袜套', id: 'sock', inFactory: true },
-            
-            { type: 'header', name: '【针车A组】' },
             ...Array.from({length: 10}, (_, i) => ({ type: 'line', name: `针车A${i+1}`, id: `stitchA${i+1}`, inStitchA: true })),
             { type: 'line', name: '针车A-销样组', id: 'stitchA_sample', inStitchA: true },
-            { type: 'summary', name: '针车A综合', calc: 'stitchA', inStitchTotal: true },
-
-            { type: 'header', name: '【针车B组】' },
-            ...Array.from({length: 14}, (_, i) => ({ type: 'line', name: `针车B${i+11}`, id: `stitchB${i+11}`, inStitchB: true })),
-            { type: 'summary', name: '针车B综合', calc: 'stitchB', inStitchTotal: true },
-
-            { type: 'summary', name: '针车总综合', calc: 'stitchTotal', inFactory: true },
-
-            { type: 'header', name: '【成型组】' },
-            ...['A','B','C','D','E','F'].map(c => ({ type: 'line', name: `成型${c}`, id: `mold${c}`, inMold: true })),
-            { type: 'summary', name: '成型综合', calc: 'mold', inFactory: true },
-
-            { type: 'summary', name: '🌟 全厂综合平均', calc: 'factory', isFactoryTotal: true },
-
-            { type: 'header', name: '【其他辅助组 - 不计入全厂】' },
+            ...Array.from({length: 12}, (_, i) => ({ type: 'line', name: `针车B${i+11}`, id: `stitchB${i+11}`, inStitchB: true })), // B11 to B22 based on image
+            ...['A','B','C','E','F'].map(c => ({ type: 'line', name: `成型${c}`, id: `mold${c}`, inMold: true })), // A, B, C, E, F based on image
             { type: 'line', name: '拉帮组', id: 'pull', inFactory: false },
-            ...Array.from({length: 5}, (_, i) => ({ type: 'line', name: `组底${i+1}`, id: `bottom${i+1}`, inFactory: false }))
+            ...Array.from({length: 5}, (_, i) => { 
+                if (i !== 3) return { type: 'line', name: `组底${i+1}`, id: `bottom${i+1}`, inBottom: true, inFactory: false };
+                return null;
+            }).filter(Boolean), // 1, 2, 3, 5 based on image
+
+            { type: 'spacer' }, // Adds a visual gap before summaries
+
+            // --- Summaries Block ---
+            { type: 'summary', name: '裁断小计', calc: 'single', targetId: 'cut' },
+            { type: 'summary', name: '准备小计', calc: 'single', targetId: 'prep' },
+            { type: 'summary', name: '袜套小计', calc: 'single', targetId: 'sock' },
+            { type: 'summary', name: '针车A小计', calc: 'stitchA' },
+            { type: 'summary', name: '针车B小计', calc: 'stitchB' },
+            { type: 'summary', name: '针车小计', calc: 'stitchTotal' },
+            { type: 'summary', name: '成型小计', calc: 'mold' },
+            { type: 'summary', name: '组底小计', calc: 'bottom', isBottomSummary: true },
+            { type: 'summary', name: '全厂综合%', calc: 'factory', isFactoryTotal: true }
         ];
 
         function getColorClass(val) {
@@ -117,7 +120,7 @@
                         weekDays.push(dateStr);
                     }
                     weeks.push({
-                        title: `${weekStartStr}-${weekEndStr}`,
+                        title: `${weekStartStr}-${weekEndStr}`, // Removed "第 X 周"
                         days: weekDays
                     });
                     curr.setDate(curr.getDate() + 7);
@@ -130,8 +133,8 @@
                 theadTr1.innerHTML = '<th rowspan="2" class="sticky-col">线别 / 部门</th>';
                 theadTr2.innerHTML = '';
 
-                weeks.forEach((week, wIdx) => {
-                    theadTr1.innerHTML += `<th colspan="7" class="week-group-header">第 ${wIdx+1} 周 (${week.title})</th>`;
+                weeks.forEach((week) => {
+                    theadTr1.innerHTML += `<th colspan="7" class="week-group-header">${week.title}</th>`;
                     ['周一', '周二', '周三', '周四', '周五', '周六'].forEach(dName => {
                         theadTr2.innerHTML += `<th class="daily-col">${dName}</th>`;
                     });
@@ -143,16 +146,17 @@
 
                 rowDefinitions.forEach(rowDef => {
                     const tr = document.createElement('tr');
-                    if (rowDef.type === 'header') {
-                        tr.className = 'section-header-row';
-                        let colSpan = 1 + weeks.length * 7;
-                        tr.innerHTML = `<td colspan="${colSpan}" style="text-align:left; font-weight:bold; color:#00e5ff; letter-spacing: 1px;">${rowDef.name}</td>`;
+                    
+                    if (rowDef.type === 'spacer') {
+                        tr.innerHTML = `<td colspan="${1 + weeks.length * 7}" style="height: 30px; background-color: transparent; border: none;"></td>`;
                         tbody.appendChild(tr);
                         return;
                     }
 
-                    if (rowDef.type === 'summary' || rowDef.isFactoryTotal) {
+                    if (rowDef.type === 'summary') {
                         tr.className = 'summary-row';
+                        if (rowDef.isFactoryTotal) tr.classList.add('factory-total-row');
+                        if (rowDef.isBottomSummary) tr.classList.add('bottom-summary-row');
                     } else {
                         tr.className = 'data-row';
                     }
@@ -195,6 +199,12 @@
                 }
                 return { poh: NaN, hours: 0 };
             }
+            if (rowDef.calc === 'single') {
+                 if (dayData[rowDef.targetId]) {
+                    return { poh: dayData[rowDef.targetId].poh, hours: dayData[rowDef.targetId].hours };
+                 }
+                 return { poh: NaN, hours: 0 };
+            }
             if (rowDef.calc === 'stitchA') {
                 let p = 0, h = 0;
                 rowDefinitions.forEach(rd => { if (rd.inStitchA && dayData[rd.id]) { p += dayData[rd.id].poh * dayData[rd.id].hours; h += dayData[rd.id].hours; } });
@@ -215,6 +225,11 @@
                 rowDefinitions.forEach(rd => { if (rd.inMold && dayData[rd.id]) { p += dayData[rd.id].poh * dayData[rd.id].hours; h += dayData[rd.id].hours; } });
                 return { poh: h > 0 ? p / h : NaN, hours: h };
             }
+            if (rowDef.calc === 'bottom') {
+                let p = 0, h = 0;
+                rowDefinitions.forEach(rd => { if (rd.inBottom && dayData[rd.id]) { p += dayData[rd.id].poh * dayData[rd.id].hours; h += dayData[rd.id].hours; } });
+                return { poh: h > 0 ? p / h : NaN, hours: h };
+            }
             if (rowDef.calc === 'factory' || rowDef.isFactoryTotal) {
                 let p = 0, h = 0;
                 rowDefinitions.forEach(rd => { if (rd.inFactory && rd.id && dayData[rd.id]) { p += dayData[rd.id].poh * dayData[rd.id].hours; h += dayData[rd.id].hours; } });
@@ -232,7 +247,6 @@
         }
     </script>
     <style>
-        /* 科技暗黑風核心設定 - 高度壓縮版 */
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0b0f19; margin: 0; padding: 5px; color: #94a3b8; font-size: 12px; }
         
         .login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(11, 15, 25, 0.95); z-index: 9999; display: flex; align-items: center; justify-content: center; }
@@ -247,7 +261,6 @@
         h2 { color: #00e5ff; margin: 0; text-align: left; font-size: 18px; text-shadow: 0 0 10px rgba(0, 229, 255, 0.3); display: flex; align-items: center; gap: 8px; }
         h2::before { content: '🌐'; font-size: 20px; }
         
-        /* 控制列 */
         .controls { background: #1e293b; padding: 8px 12px; border-radius: 6px; border: 1px solid #334155; display: flex; justify-content: flex-start; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
         .controls span { color: #e2e8f0; font-weight: bold; }
         .controls input { background: #0f172a; color: #00e5ff; padding: 4px 6px; border: 1px solid #334155; border-radius: 4px; outline: none; font-size: 12px; }
@@ -257,7 +270,6 @@
         .btn-dark { background: #334155; color: white; border: none; border-radius: 4px; padding: 5px 12px; cursor: pointer; font-weight: bold; transition: 0.3s; }
         .btn-dark:hover { background: #475569; }
 
-        /* 表格與極致壓縮設定 */
         table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 5px; white-space: nowrap; }
         th, td { border: 1px solid #1f2937; padding: 4px 6px; text-align: center; }
         
@@ -265,21 +277,38 @@
         .week-group-header { background-color: #1e293b !important; color: #00e5ff; letter-spacing: 1px; border-bottom: 1px solid #00e5ff; }
         .weekly-avg-header { background-color: #161b22; color: #e2e8f0; border-left: 2px solid #334155; }
         
-        .section-header-row td { background: #1e293b; border-top: 1px solid #334155; border-bottom: 1px solid #334155; padding-left: 10px !important; }
         .data-row td { background-color: #111827; }
         .data-row:hover td { background-color: #1f2937; }
-        .summary-row td { background-color: #161b22; font-weight: bold; border-top: 1px solid #334155; border-bottom: 1px solid #334155; }
         
+        /* Summary Row Styling */
+        .summary-row td { 
+            background-color: #1e293b; /* Slightly lighter background than data rows */
+            color: #e2e8f0; /* Lighter text color */
+            font-weight: bold; 
+            border-top: 2px solid #334155; 
+            border-bottom: 2px solid #334155;
+            font-size: 1.05em; /* Slightly larger text */
+        }
+        
+        /* Specific styling for the very bottom summary rows to distinguish them further if needed */
+        .factory-total-row td {
+            background-color: #0f172a; /* Darker header-like background */
+            color: #00e5ff; /* Cyan text */
+            font-size: 1.1em;
+            border-top: 3px double #00e5ff;
+        }
+
         .line-name { text-align: left; padding-left: 10px; color: #e2e8f0; font-weight: bold; border-right: 2px solid #334155; min-width: 100px; }
         .weekly-avg { background-color: #161b22 !important; border-left: 2px solid #334155; font-size: 1.05em; }
 
-        /* 螢光數字變色 */
         .val-red { color: #ff4d4f; font-weight: 800; text-shadow: 0 0 6px rgba(255, 77, 79, 0.4); }
         .val-normal { color: #64748b; font-weight: 500; } 
         .val-light-green { color: #facc15; font-weight: 800; text-shadow: 0 0 6px rgba(250, 204, 21, 0.4); } 
         .val-green { color: #00e676; font-weight: 900; text-shadow: 0 0 8px rgba(0, 230, 118, 0.5); font-size: 1.02em; }
 
         .sticky-col { position: sticky; left: 0; background-color: #0f172a !important; z-index: 2; box-shadow: 2px 0 4px rgba(0,0,0,0.5); }
+        .summary-row .sticky-col { background-color: #1e293b !important; }
+        .factory-total-row .sticky-col { background-color: #0f172a !important; }
     </style>
 </head>
 <body>
