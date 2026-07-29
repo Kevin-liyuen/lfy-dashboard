@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>全局生产线快照看板</title>
+    <title>全局生产线快照看板 (动态架构版)</title>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
         const firebaseConfig = {
           apiKey: "AIzaSyAMckSKafxLho2CR5PVe8KLJ6dYAEIJiZI",
@@ -20,10 +20,84 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-
         const ACCESS_PASSWORD = "888888"; 
         
-        // 自动设置近8周日期并查询
+        let rowDefinitions = []; 
+
+        window.checkPassword = function() {
+            const pwd = document.getElementById('pwd-input').value;
+            if (pwd === ACCESS_PASSWORD) {
+                document.getElementById('login-overlay').style.display = 'none';
+                sessionStorage.setItem('lfy_auth_dash', 'true');
+                initDashboardConfig(); 
+            } else {
+                alert("密码错误！");
+            }
+        };
+
+        window.onload = () => {
+            if (sessionStorage.getItem('lfy_auth_dash') === 'true') {
+                document.getElementById('login-overlay').style.display = 'none';
+                initDashboardConfig(); 
+            }
+            document.getElementById('pwd-input').addEventListener('keypress', function (e) {
+                if (e.key === 'Enter') window.checkPassword();
+            });
+        };
+
+        // 步驟 1: 動態讀取架構設定
+        async function initDashboardConfig() {
+            try {
+                const docSnap = await getDoc(doc(db, "system_config", "layout"));
+                if (docSnap.exists()) {
+                    const config = docSnap.data();
+                    rowDefinitions = [];
+
+                    // 1. 展開所有獨立線別
+                    config.groups.forEach(group => {
+                        group.lines.forEach(line => {
+                            rowDefinitions.push({
+                                type: 'line',
+                                name: line.name,
+                                id: line.id,
+                                groupName: group.name,
+                                inFactory: group.isFactoryTotal
+                            });
+                        });
+                    });
+
+                    // 2. 加入間隔空白列
+                    rowDefinitions.push({ type: 'spacer' });
+
+                    // 3. 自動生成各部門小計 (群組加權平均)
+                    config.groups.forEach(group => {
+                        rowDefinitions.push({
+                            type: 'summary',
+                            name: `${group.name}小计`,
+                            calc: 'group',
+                            groupName: group.name,
+                            isBottomSummary: !group.isFactoryTotal // 沒有算入全廠的通常放在下方區隔
+                        });
+                    });
+
+                    // 4. 加入全廠綜合 (包含所有 inFactory = true 的線別)
+                    rowDefinitions.push({
+                        type: 'summary',
+                        name: '全厂综合%',
+                        calc: 'factory',
+                        isFactoryTotal: true
+                    });
+
+                    // 架構加載完畢，觸發日期預設與資料抓取
+                    setDefaultDatesAndLoad();
+                } else {
+                    alert("⚠️ 尚未建立产线架构！请先前往 config.html 设定并保存架构。");
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
         function setDefaultDatesAndLoad() {
             let today = new Date();
             let eightWeeksAgo = new Date();
@@ -35,60 +109,43 @@
             window.loadDashboard();
         }
 
-        window.checkPassword = function() {
-            const pwd = document.getElementById('pwd-input').value;
-            if (pwd === ACCESS_PASSWORD) {
-                document.getElementById('login-overlay').style.display = 'none';
-                sessionStorage.setItem('lfy_auth_dash', 'true');
-                setDefaultDatesAndLoad(); // 登入后自动加载
-            } else {
-                alert("密码错误！");
-            }
-        };
-
-        window.onload = () => {
-            if (sessionStorage.getItem('lfy_auth_dash') === 'true') {
-                document.getElementById('login-overlay').style.display = 'none';
-                setDefaultDatesAndLoad(); // 已登入则直接加载
-            }
-            document.getElementById('pwd-input').addEventListener('keypress', function (e) {
-                if (e.key === 'Enter') window.checkPassword();
-            });
-        };
-
-        const rowDefinitions = [
-            { type: 'line', name: '裁断', id: 'cut', inFactory: true },
-            { type: 'line', name: '准备', id: 'prep', inFactory: true },
-            { type: 'line', name: '袜套', id: 'sock', inFactory: true },
-            ...Array.from({length: 10}, (_, i) => ({ type: 'line', name: `针车A${i+1}`, id: `stitchA${i+1}`, inStitchA: true })),
-            { type: 'line', name: '针车A-销样组', id: 'stitchA_sample', inStitchA: true },
-            ...Array.from({length: 12}, (_, i) => ({ type: 'line', name: `针车B${i+11}`, id: `stitchB${i+11}`, inStitchB: true })),
-            ...['A','B','C','E','F'].map(c => ({ type: 'line', name: `成型${c}`, id: `mold${c}`, inMold: true })),
-            { type: 'line', name: '拉帮组', id: 'pull', inFactory: false },
-            ...Array.from({length: 5}, (_, i) => { 
-                if (i !== 3) return { type: 'line', name: `组底${i+1}`, id: `bottom${i+1}`, inBottom: true, inFactory: false };
-                return null;
-            }).filter(Boolean),
-
-            { type: 'spacer' },
-
-            { type: 'summary', name: '裁断小计', calc: 'single', targetId: 'cut' },
-            { type: 'summary', name: '准备小计', calc: 'single', targetId: 'prep' },
-            { type: 'summary', name: '袜套小计', calc: 'single', targetId: 'sock' },
-            { type: 'summary', name: '针车A小计', calc: 'stitchA' },
-            { type: 'summary', name: '针车B小计', calc: 'stitchB' },
-            { type: 'summary', name: '针车小计', calc: 'stitchTotal' },
-            { type: 'summary', name: '成型小计', calc: 'mold' },
-            { type: 'summary', name: '组底小计', calc: 'bottom', isBottomSummary: true },
-            { type: 'summary', name: '全厂综合%', calc: 'factory', isFactoryTotal: true }
-        ];
-
         function getColorClass(val) {
             if (val === null || val === undefined || isNaN(val)) return 'val-normal';
             if (val < 0.8) return 'val-red';          
             if (val >= 0.9 && val < 1.0) return 'val-light-green'; 
             if (val >= 1.0) return 'val-green';       
             return 'val-normal';                      
+        }
+
+        // 動態計算公式
+        function getRowValueAndHours(rowDef, dayData) {
+            if (rowDef.type === 'line') {
+                if (dayData[rowDef.id]) {
+                    return { poh: dayData[rowDef.id].poh, hours: dayData[rowDef.id].hours };
+                }
+                return { poh: NaN, hours: 0 };
+            }
+            if (rowDef.calc === 'group') {
+                let p = 0, h = 0;
+                rowDefinitions.forEach(rd => {
+                    if (rd.type === 'line' && rd.groupName === rowDef.groupName && dayData[rd.id]) {
+                        p += dayData[rd.id].poh * dayData[rd.id].hours; 
+                        h += dayData[rd.id].hours;
+                    }
+                });
+                return { poh: h > 0 ? p / h : NaN, hours: h };
+            }
+            if (rowDef.calc === 'factory') {
+                let p = 0, h = 0;
+                rowDefinitions.forEach(rd => {
+                    if (rd.type === 'line' && rd.inFactory && dayData[rd.id]) {
+                        p += dayData[rd.id].poh * dayData[rd.id].hours; 
+                        h += dayData[rd.id].hours;
+                    }
+                });
+                return { poh: h > 0 ? p / h : NaN, hours: h };
+            }
+            return { poh: NaN, hours: 0 };
         }
 
         window.loadDashboard = async function() {
@@ -106,9 +163,7 @@
             try {
                 const querySnapshot = await getDocs(collection(db, "production_data"));
                 const dbData = {};
-                querySnapshot.forEach(doc => {
-                    dbData[doc.id] = doc.data();
-                });
+                querySnapshot.forEach(doc => { dbData[doc.id] = doc.data(); });
 
                 let weeks = [];
                 let curr = new Date(start);
@@ -118,8 +173,7 @@
 
                 while (curr <= end) {
                     let weekDays = [];
-                    let weekStartStr = '';
-                    let weekEndStr = '';
+                    let weekStartStr = '', weekEndStr = '';
                     for (let i = 0; i < 6; i++) {
                         let d = new Date(curr);
                         d.setDate(curr.getDate() + i);
@@ -131,10 +185,7 @@
                         if (i === 5) weekEndStr = `${mm}/${dd}`;
                         weekDays.push(dateStr);
                     }
-                    weeks.push({
-                        title: `${weekStartStr}-${weekEndStr}`,
-                        days: weekDays
-                    });
+                    weeks.push({ title: `${weekStartStr}-${weekEndStr}`, days: weekDays });
                     curr.setDate(curr.getDate() + 7);
                 }
 
@@ -204,58 +255,10 @@
             }
         }
 
-        function getRowValueAndHours(rowDef, dayData) {
-            if (rowDef.type === 'line') {
-                if (dayData[rowDef.id]) {
-                    return { poh: dayData[rowDef.id].poh, hours: dayData[rowDef.id].hours };
-                }
-                return { poh: NaN, hours: 0 };
-            }
-            if (rowDef.calc === 'single') {
-                 if (dayData[rowDef.targetId]) {
-                    return { poh: dayData[rowDef.targetId].poh, hours: dayData[rowDef.targetId].hours };
-                 }
-                 return { poh: NaN, hours: 0 };
-            }
-            if (rowDef.calc === 'stitchA') {
-                let p = 0, h = 0;
-                rowDefinitions.forEach(rd => { if (rd.inStitchA && dayData[rd.id]) { p += dayData[rd.id].poh * dayData[rd.id].hours; h += dayData[rd.id].hours; } });
-                return { poh: h > 0 ? p / h : NaN, hours: h };
-            }
-            if (rowDef.calc === 'stitchB') {
-                let p = 0, h = 0;
-                rowDefinitions.forEach(rd => { if (rd.inStitchB && dayData[rd.id]) { p += dayData[rd.id].poh * dayData[rd.id].hours; h += dayData[rd.id].hours; } });
-                return { poh: h > 0 ? p / h : NaN, hours: h };
-            }
-            if (rowDef.calc === 'stitchTotal') {
-                let p = 0, h = 0;
-                rowDefinitions.forEach(rd => { if ((rd.inStitchA || rd.inStitchB) && dayData[rd.id]) { p += dayData[rd.id].poh * dayData[rd.id].hours; h += dayData[rd.id].hours; } });
-                return { poh: h > 0 ? p / h : NaN, hours: h };
-            }
-            if (rowDef.calc === 'mold') {
-                let p = 0, h = 0;
-                rowDefinitions.forEach(rd => { if (rd.inMold && dayData[rd.id]) { p += dayData[rd.id].poh * dayData[rd.id].hours; h += dayData[rd.id].hours; } });
-                return { poh: h > 0 ? p / h : NaN, hours: h };
-            }
-            if (rowDef.calc === 'bottom') {
-                let p = 0, h = 0;
-                rowDefinitions.forEach(rd => { if (rd.inBottom && dayData[rd.id]) { p += dayData[rd.id].poh * dayData[rd.id].hours; h += dayData[rd.id].hours; } });
-                return { poh: h > 0 ? p / h : NaN, hours: h };
-            }
-            if (rowDef.calc === 'factory' || rowDef.isFactoryTotal) {
-                let p = 0, h = 0;
-                rowDefinitions.forEach(rd => { if (rd.inFactory && rd.id && dayData[rd.id]) { p += dayData[rd.id].poh * dayData[rd.id].hours; h += dayData[rd.id].hours; } });
-                return { poh: h > 0 ? p / h : NaN, hours: h };
-            }
-            return { poh: NaN, hours: 0 };
-        }
-
         window.toggleDetails = function() {
             const cols = document.querySelectorAll('.daily-col');
             const isHidden = cols[0] && cols[0].style.display === 'none';
-            cols.forEach(col => {
-                col.style.display = isHidden ? 'table-cell' : 'none';
-            });
+            cols.forEach(col => { col.style.display = isHidden ? 'table-cell' : 'none'; });
         }
     </script>
     <style>
@@ -265,13 +268,10 @@
         .login-box input { width: 90%; padding: 10px; margin-bottom: 15px; background: #0d1117; color: #fff; border: 1px solid #30363d; border-radius: 6px; outline: none; }
         .login-box input:focus { border-color: #00e5ff; box-shadow: 0 0 8px rgba(0, 229, 255, 0.4); }
         .login-box button { width: 100%; padding: 10px; background: linear-gradient(90deg, #00d2ff 0%, #3a7bd5 100%); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight:bold; letter-spacing: 1px;}
-        .login-box button:hover { opacity: 0.9; box-shadow: 0 0 15px rgba(0, 229, 255, 0.5); }
-
         .dashboard { max-width: 98vw; margin: auto; background: #111827; padding: 10px 15px; border-radius: 8px; border: 1px solid #1f2937; box-shadow: 0 5px 20px rgba(0,0,0,0.8); overflow-x: auto; }
         .header-bar { border-bottom: 1px solid #334155; padding-bottom: 5px; margin-bottom: 10px; }
         h2 { color: #00e5ff; margin: 0; text-align: left; font-size: 18px; text-shadow: 0 0 10px rgba(0, 229, 255, 0.3); display: flex; align-items: center; gap: 8px; }
         h2::before { content: '🌐'; font-size: 20px; }
-        
         .controls { background: #1e293b; padding: 8px 12px; border-radius: 6px; border: 1px solid #334155; display: flex; justify-content: flex-start; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
         .controls span { color: #e2e8f0; font-weight: bold; }
         .controls input { background: #0f172a; color: #00e5ff; padding: 4px 6px; border: 1px solid #334155; border-radius: 4px; outline: none; font-size: 12px; }
@@ -280,28 +280,21 @@
         .btn-cyan:hover { background: #0ea5e9; box-shadow: 0 0 8px rgba(14, 165, 233, 0.5); }
         .btn-dark { background: #334155; color: white; border: none; border-radius: 4px; padding: 5px 12px; cursor: pointer; font-weight: bold; transition: 0.3s; }
         .btn-dark:hover { background: #475569; }
-
         table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 5px; white-space: nowrap; }
         th, td { border: 1px solid #1f2937; padding: 4px 6px; text-align: center; }
-        
         th { background-color: #0f172a; color: #94a3b8; font-weight: 600; }
         .week-group-header { background-color: #1e293b !important; color: #00e5ff; letter-spacing: 1px; border-bottom: 1px solid #00e5ff; }
         .weekly-avg-header { background-color: #161b22; color: #e2e8f0; border-left: 2px solid #334155; }
-        
         .data-row td { background-color: #111827; }
         .data-row:hover td { background-color: #1f2937; }
-        
         .summary-row td { background-color: #1e293b; color: #e2e8f0; font-weight: bold; border-top: 2px solid #334155; border-bottom: 2px solid #334155; font-size: 1.05em; }
         .factory-total-row td { background-color: #0f172a; color: #00e5ff; font-size: 1.1em; border-top: 3px double #00e5ff; }
-
         .line-name { text-align: left; padding-left: 10px; color: #e2e8f0; font-weight: bold; border-right: 2px solid #334155; min-width: 100px; }
         .weekly-avg { background-color: #161b22 !important; border-left: 2px solid #334155; font-size: 1.05em; }
-
         .val-red { color: #ff4d4f; font-weight: 800; text-shadow: 0 0 6px rgba(255, 77, 79, 0.4); }
         .val-normal { color: #64748b; font-weight: 500; } 
         .val-light-green { color: #facc15; font-weight: 800; text-shadow: 0 0 6px rgba(250, 204, 21, 0.4); } 
         .val-green { color: #00e676; font-weight: 900; text-shadow: 0 0 8px rgba(0, 230, 118, 0.5); font-size: 1.02em; }
-
         .sticky-col { position: sticky; left: 0; background-color: #0f172a !important; z-index: 2; box-shadow: 2px 0 4px rgba(0,0,0,0.5); }
         .summary-row .sticky-col { background-color: #1e293b !important; }
         .factory-total-row .sticky-col { background-color: #0f172a !important; }
@@ -318,7 +311,7 @@
 
     <div class="dashboard">
         <div class="header-bar">
-            <h2>全局快照多周看板</h2>
+            <h2>全局快照多周看板 (动态版)</h2>
         </div>
         <div class="controls">
             <span>数据时间范围：</span>
@@ -329,11 +322,8 @@
         <div style="overflow-x: auto;">
             <table id="dashboard-table">
                 <thead>
-                    <tr id="thead-tr-1">
-                        <th rowspan="2" class="sticky-col">线别 / 部门</th>
-                    </tr>
-                    <tr id="thead-tr-2">
-                    </tr>
+                    <tr id="thead-tr-1"><th rowspan="2" class="sticky-col">线别 / 部门</th></tr>
+                    <tr id="thead-tr-2"></tr>
                 </thead>
                 <tbody id="table-body">
                     <tr><td colspan="10" style="text-align: center; color: #475569; padding: 40px; font-size: 14px;">数据加载中...</td></tr>
