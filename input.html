@@ -4,10 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>生产线数据录入系统</title>
+    <!-- 引入 Excel 解析库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
         // 请替换为您真实的 Firebase Config
         const firebaseConfig = {
@@ -21,17 +22,14 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-        const auth = getAuth(app);
 
         // 登录密码检查
-        const ACCESS_PASSWORD = "888888"; // 您可以在此修改密码
+        const ACCESS_PASSWORD = "888888"; 
         window.checkPassword = function() {
             const pwd = document.getElementById('pwd-input').value;
             if (pwd === ACCESS_PASSWORD) {
                 document.getElementById('login-overlay').style.display = 'none';
                 sessionStorage.setItem('lfy_auth', 'true');
-                // 密码正确后才连接 Firebase
-                signInAnonymously(auth).catch(err => console.error("Firebase Auth 失败:", err));
             } else {
                 alert("密码错误，请重试！");
             }
@@ -52,7 +50,6 @@
         window.onload = () => {
             if (sessionStorage.getItem('lfy_auth') === 'true') {
                 document.getElementById('login-overlay').style.display = 'none';
-                signInAnonymously(auth).catch(err => console.error("Firebase Auth 失败:", err));
             }
 
             const tbody = document.getElementById('table-body');
@@ -169,6 +166,66 @@
                 document.getElementById('save-btn').innerText = "一键保存提交";
             }
         }
+
+        // 处理 Excel 历史数据导入
+        window.handleExcelUpload = function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            if (!confirm("即将解析并导入该 Excel 中的所有数据，确定执行？")) return;
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    document.getElementById('upload-btn-label').innerText = "数据处理中...";
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array', cellDates: true});
+                    
+                    const sheetPoh = workbook.Sheets["POH输入"];
+                    const sheetHours = workbook.Sheets["工时输入"];
+                    if (!sheetPoh || !sheetHours) throw new Error("找不到名为 'POH输入' 或 '工时输入' 的工作表");
+
+                    const jsonPoh = XLSX.utils.sheet_to_json(sheetPoh, {header: 1, raw: false, dateNF: 'yyyy-mm-dd'});
+                    const jsonHours = XLSX.utils.sheet_to_json(sheetHours, {header: 1});
+                    
+                    const dates = jsonPoh[0];
+                    const firebaseData = {};
+                    
+                    for(let i = 1; i < jsonPoh.length; i++) {
+                        const lineName = jsonPoh[i][0];
+                        if(!lineName) continue;
+                        
+                        // 寻找对应 ID
+                        const lineObj = lines.find(l => l.name === lineName);
+                        const lineId = lineObj ? lineObj.id : lineName;
+                        
+                        for(let j = 1; j < dates.length; j++) {
+                            const dateStr = dates[j];
+                            const poh = parseFloat(jsonPoh[i][j]);
+                            const hours = parseFloat(jsonHours[i][j]);
+                            
+                            if(!isNaN(poh) && !isNaN(hours) && dateStr) {
+                                let finalDate = String(dateStr).split(' ')[0];
+                                if (finalDate.includes('/')) finalDate = finalDate.replace(/\//g, '-');
+                                
+                                if(!firebaseData[finalDate]) firebaseData[finalDate] = {};
+                                firebaseData[finalDate][lineId] = { poh, hours };
+                            }
+                        }
+                    }
+                    
+                    let count = Object.keys(firebaseData).length;
+                    for(const [date, payload] of Object.entries(firebaseData)) {
+                        await setDoc(doc(db, "production_data", date), payload);
+                    }
+                    alert(`✅ 成功导入 ${count} 天的历史数据！`);
+                    document.getElementById('upload-btn-label').innerText = "📁 导入历史 Excel";
+                } catch (err) {
+                    alert("❌ 导入失败: " + err.message);
+                    document.getElementById('upload-btn-label').innerText = "📁 导入历史 Excel";
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        };
     </script>
     <style>
         body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; color: #333; }
@@ -179,7 +236,13 @@
         .login-box button:hover { background: #2b6cb0; }
         
         .container { max-width: 800px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
-        h2 { text-align: center; color: #1a365d; border-bottom: 2px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 25px; }
+        .header-bar { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 25px; }
+        h2 { color: #1a365d; margin: 0; }
+        
+        .upload-btn { background: #edf2f7; color: #4a5568; border: 1px solid #cbd5e0; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; }
+        .upload-btn:hover { background: #e2e8f0; }
+        input[type="file"] { display: none; }
+
         .date-section { text-align: center; margin-bottom: 20px; font-size: 16px; }
         .date-section input { padding: 8px 15px; font-size: 16px; border: 1px solid #cbd5e0; border-radius: 4px; }
         
@@ -209,7 +272,13 @@
     </div>
 
     <div class="container">
-        <h2>📊 生产线数据每日录入</h2>
+        <div class="header-bar">
+            <h2>📊 生产线数据每日录入</h2>
+            <label class="upload-btn" id="upload-btn-label">
+                📁 导入历史 Excel
+                <input type="file" accept=".xlsx, .xls" onchange="handleExcelUpload(event)">
+            </label>
+        </div>
         <div class="date-section">
             <label for="date-picker" style="font-weight:bold; color:#2d3748;">请选择日期：</label>
             <input type="date" id="date-picker">
