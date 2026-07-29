@@ -3,10 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>系统架构建模中心 (双厂版)</title>
+    <title>系统架构建模中心 (双厂版 - 自动搬家引擎)</title>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        // ★ 核心改動：替換為 Realtime Database SDK
+        // ★ 同時載入舊版 Firestore 與新版 Realtime Database 的工具
+        import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
         import { getDatabase, ref, get, set } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 
         const firebaseConfig = {
@@ -20,7 +21,8 @@
         };
 
         const app = initializeApp(firebaseConfig);
-        const db = getDatabase(app); // ★ 初始化 Realtime Database
+        const dbFirestore = getFirestore(app); // 舊版引擎
+        const dbRTDB = getDatabase(app);       // 新版引擎
         const ACCESS_PASSWORD = "888888"; 
         
         window.systemConfig = { groups: [] };
@@ -62,40 +64,52 @@
 
             try {
                 const layoutDocId = window.currentFactory === 'lfy' ? "layout" : "ly_layout";
-                // ★ 核心改動：RTDB 讀取語法
-                const snapshot = await get(ref(db, 'system_config/' + layoutDocId));
+                
+                // 1. 先嘗試從新版 Realtime Database 讀取
+                const snapshot = await get(ref(dbRTDB, 'system_config/' + layoutDocId));
                 
                 if (snapshot.exists()) {
                     window.systemConfig = snapshot.val();
                 } else {
-                    if (window.currentFactory === 'lfy') {
-                        window.systemConfig = {
-                            groups: [
-                                { name: "裁断", isFactoryTotal: true, lines: [{ id: "cut", name: "裁断" }] },
-                                { name: "准备", isFactoryTotal: true, lines: [{ id: "prep", name: "准备" }] },
-                                { name: "袜套", isFactoryTotal: true, lines: [{ id: "sock", name: "袜套" }] },
-                                { name: "针车A", isFactoryTotal: true, lines: [
-                                    ...Array.from({length: 10}, (_, i) => ({ id: `stitchA${i+1}`, name: `针车A${i+1}` })),
-                                    { id: "stitchA_sample", name: "针车A-销样组" }
-                                ]},
-                                { name: "针车B", isFactoryTotal: true, lines: 
-                                    Array.from({length: 14}, (_, i) => ({ id: `stitchB${i+11}`, name: `针车B${i+11}` }))
-                                },
-                                { name: "成型", isFactoryTotal: true, lines: 
-                                    ['A','B','C','D','E','F'].map(c => ({ id: `mold${c}`, name: `成型${c}` }))
-                                },
-                                { name: "拉帮", isFactoryTotal: false, lines: [{ id: "pull", name: "拉帮组" }] },
-                                { name: "组底", isFactoryTotal: false, lines: 
-                                    Array.from({length: 5}, (_, i) => ({ id: `bottom${i+1}`, name: `组底${i+1}` }))
-                                }
-                            ]
-                        };
+                    // 2. ★ 自動搬家邏輯：如果新版是空的，去舊版 Firestore 撈資料！
+                    const oldDocSnap = await getDoc(doc(dbFirestore, "system_config", layoutDocId));
+                    
+                    if (oldDocSnap.exists()) {
+                        window.systemConfig = oldDocSnap.data();
+                        // 找到舊資料後，立刻自動寫入新版 RTDB 完成搬家
+                        await set(ref(dbRTDB, 'system_config/' + layoutDocId), window.systemConfig);
+                        alert(`✅ 侦测到您在旧版设定的【${factoryName}】架构，已自动为您无缝转移至新版数据库！`);
                     } else {
-                        window.systemConfig = {
-                            groups: [
-                                { name: "LY新建部门", isFactoryTotal: true, lines: [{ id: "ly_line1", name: "LY产线1" }] }
-                            ]
-                        };
+                        // 3. 如果連舊版都沒有（例如全新的 LY 廠），才給予預設範本
+                        if (window.currentFactory === 'lfy') {
+                            window.systemConfig = {
+                                groups: [
+                                    { name: "裁断", isFactoryTotal: true, lines: [{ id: "cut", name: "裁断" }] },
+                                    { name: "准备", isFactoryTotal: true, lines: [{ id: "prep", name: "准备" }] },
+                                    { name: "袜套", isFactoryTotal: true, lines: [{ id: "sock", name: "袜套" }] },
+                                    { name: "针车A", isFactoryTotal: true, lines: [
+                                        ...Array.from({length: 10}, (_, i) => ({ id: `stitchA${i+1}`, name: `针车A${i+1}` })),
+                                        { id: "stitchA_sample", name: "针车A-销样组" }
+                                    ]},
+                                    { name: "针车B", isFactoryTotal: true, lines: 
+                                        Array.from({length: 14}, (_, i) => ({ id: `stitchB${i+11}`, name: `针车B${i+11}` }))
+                                    },
+                                    { name: "成型", isFactoryTotal: true, lines: 
+                                        ['A','B','C','D','E','F'].map(c => ({ id: `mold${c}`, name: `成型${c}` }))
+                                    },
+                                    { name: "拉帮", isFactoryTotal: false, lines: [{ id: "pull", name: "拉帮组" }] },
+                                    { name: "组底", isFactoryTotal: false, lines: 
+                                        Array.from({length: 5}, (_, i) => ({ id: `bottom${i+1}`, name: `组底${i+1}` }))
+                                    }
+                                ]
+                            };
+                        } else {
+                            window.systemConfig = {
+                                groups: [
+                                    { name: "LY新建部门", isFactoryTotal: true, lines: [{ id: "ly_line1", name: "LY产线1" }] }
+                                ]
+                            };
+                        }
                     }
                 }
                 renderUI();
@@ -159,8 +173,8 @@
                     }
                 }
                 const layoutDocId = window.currentFactory === 'lfy' ? "layout" : "ly_layout";
-                // ★ 核心改動：RTDB 寫入語法
-                await set(ref(db, 'system_config/' + layoutDocId), window.systemConfig);
+                // 儲存時，一律存入新版 Realtime Database
+                await set(ref(dbRTDB, 'system_config/' + layoutDocId), window.systemConfig);
                 alert(`✅ ${window.currentFactory.toUpperCase()} 厂产线架构更新成功！`);
             } catch (e) {
                 alert("❌ 保存失败：" + e.message);
