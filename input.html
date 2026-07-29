@@ -1,29 +1,43 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LFY 生產線數據輸入</title>
+    <title>生产线数据录入系统</title>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
+        // 请替换为您真实的 Firebase Config
         const firebaseConfig = {
-            apiKey: "AIzaSyAMckSKafxLho2CR5PVe8KLJ6dYAEIJiZI",
-            authDomain: "lfy-dashboard.firebaseapp.com",
-            databaseURL: "https://lfy-dashboard-default-rtdb.asia-southeast1.firebasedatabase.app",
-            projectId: "lfy-dashboard",
-            storageBucket: "lfy-dashboard.firebasestorage.app",
-            messagingSenderId: "765435998608",
-            appId: "1:765435998608:web:220c0534494262c4924315"
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT_ID.appspot.com",
+            messagingSenderId: "YOUR_MESSAGING_ID",
+            appId: "YOUR_APP_ID"
         };
 
         const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
         const db = getFirestore(app);
+        const auth = getAuth(app);
 
-        const allLines = [
+        // 登录密码检查
+        const ACCESS_PASSWORD = "888888"; // 您可以在此修改密码
+        window.checkPassword = function() {
+            const pwd = document.getElementById('pwd-input').value;
+            if (pwd === ACCESS_PASSWORD) {
+                document.getElementById('login-overlay').style.display = 'none';
+                sessionStorage.setItem('lfy_auth', 'true');
+                // 密码正确后才连接 Firebase
+                signInAnonymously(auth).catch(err => console.error("Firebase Auth 失败:", err));
+            } else {
+                alert("密码错误，请重试！");
+            }
+        };
+
+        const lines = [
             { id: "cut", name: "裁断", group: "裁断" },
             { id: "prep", name: "准备", group: "准备" },
             { id: "sock", name: "袜套", group: "袜套" },
@@ -31,252 +45,188 @@
             { id: "stitchA_sample", name: "针车A-销样组", group: "针车A" },
             ...Array.from({length: 14}, (_, i) => ({ id: `stitchB${i+11}`, name: `针车B${i+11}`, group: "针车B" })),
             ...['A','B','C','D','E','F'].map(c => ({ id: `mold${c}`, name: `成型${c}`, group: "成型" })),
-            { id: "pull", name: "拉帮组", group: "拉帮组" },
+            { id: "pull", name: "拉帮组", group: "拉帮" },
             ...Array.from({length: 5}, (_, i) => ({ id: `bottom${i+1}`, name: `组底${i+1}`, group: "组底" }))
         ];
 
-        // 建立輸入表格陣列以便處理貼上事件
-        let inputGrid = [];
-
-        window.onload = async () => {
-            initInputTable();
-            
-            document.getElementById('save-status').innerText = "連線中...";
-            try {
-                // 匿名登入以獲取 Firestore 寫入權限
-                await signInAnonymously(auth);
-                document.getElementById('save-status').innerText = "✅ 系統已連線，準備就緒。";
-            } catch (error) {
-                console.error("登入失敗:", error);
-                document.getElementById('save-status').innerText = "⚠️ 權限錯誤：請確認 Firebase 規則已設為測試模式。";
+        window.onload = () => {
+            if (sessionStorage.getItem('lfy_auth') === 'true') {
+                document.getElementById('login-overlay').style.display = 'none';
+                signInAnonymously(auth).catch(err => console.error("Firebase Auth 失败:", err));
             }
 
-            // 預設今天日期
-            const today = new Date().toISOString().split('T')[0];
-            document.getElementById('input-date').value = today;
-            
-            if(new Date().getDay() !== 0) {
-                document.getElementById('input-date').dispatchEvent(new Event('change'));
-            }
-        };
-
-        window.initInputTable = function() {
-            const tbody = document.getElementById('input-table-body');
-            tbody.innerHTML = '';
+            const tbody = document.getElementById('table-body');
             let currentGroup = '';
-            inputGrid = [];
             
-            allLines.forEach((line, index) => {
+            lines.forEach((line) => {
                 if(line.group !== currentGroup) {
                     currentGroup = line.group;
                     const groupRow = document.createElement('tr');
-                    groupRow.innerHTML = `<td colspan="3" class="group-header">${currentGroup}</td>`;
+                    groupRow.className = "group-header";
+                    groupRow.innerHTML = `<td colspan="3">${currentGroup}</td>`;
                     tbody.appendChild(groupRow);
                 }
                 const tr = document.createElement('tr');
-                tr.className = index % 2 === 0 ? 'even-row' : 'odd-row';
-                
-                // 建立輸入框並加入陣列
-                const pohInput = document.createElement('input');
-                pohInput.type = 'number';
-                pohInput.step = '0.01';
-                pohInput.id = `input_${line.id}_poh`;
-                pohInput.className = 'input-box';
-                pohInput.placeholder = '達成率(%)';
-
-                const hoursInput = document.createElement('input');
-                hoursInput.type = 'number';
-                hoursInput.step = '0.01';
-                hoursInput.id = `input_${line.id}_hours`;
-                hoursInput.className = 'input-box';
-                hoursInput.placeholder = '工时';
-
-                // 儲存到 grid 供 paste 使用 [row][col]
-                inputGrid.push([pohInput, hoursInput]);
-
-                const tdName = document.createElement('td');
-                tdName.className = 'line-name';
-                tdName.innerText = line.name;
-                
-                const tdPoh = document.createElement('td');
-                tdPoh.appendChild(pohInput);
-                
-                const tdHours = document.createElement('td');
-                tdHours.appendChild(hoursInput);
-
-                tr.appendChild(tdName);
-                tr.appendChild(tdPoh);
-                tr.appendChild(tdHours);
+                tr.className = "data-row";
+                tr.innerHTML = `
+                    <td class="line-name">${line.name}</td>
+                    <td><input type="number" step="0.01" id="${line.id}_poh" class="input-box" placeholder="例如: 95.5"></td>
+                    <td><input type="number" step="0.5" id="${line.id}_hours" class="input-box" placeholder="例如: 640"></td>
+                `;
                 tbody.appendChild(tr);
+            });
 
-                // 綁定貼上事件
-                [pohInput, hoursInput].forEach((input, colIdx) => {
-                    input.addEventListener('paste', (e) => handlePaste(e, index, colIdx));
-                });
+            // 日期选择事件
+            document.getElementById('date-picker').addEventListener('change', function(e) {
+                const date = new Date(this.value);
+                if (date.getDay() === 0) {
+                    alert("⚠️ 星期日为假日，系统已锁定，不可输入数据！");
+                    this.value = '';
+                    document.querySelectorAll('.input-box').forEach(el => el.value = '');
+                } else {
+                    loadData(this.value);
+                }
+            });
+
+            // 支持 Excel 批量粘贴 (Ctrl+V)
+            document.addEventListener('paste', function(e) {
+                if (e.target.tagName !== 'INPUT' || !e.target.classList.contains('input-box')) return;
+                e.preventDefault();
+                const pasteData = (e.clipboardData || window.clipboardData).getData('text');
+                const rows = pasteData.trim().split('\n');
+                
+                const activeInput = document.activeElement;
+                const startTr = activeInput.closest('tr');
+                const tbody = startTr.parentElement;
+                const allDataRows = Array.from(tbody.querySelectorAll('tr.data-row'));
+                const startIndex = allDataRows.indexOf(startTr);
+                const isPoh = activeInput.id.includes('_poh');
+                
+                for (let i = 0; i < rows.length; i++) {
+                    if (startIndex + i >= allDataRows.length) break;
+                    const cols = rows[i].split('\t');
+                    const targetTr = allDataRows[startIndex + i];
+                    
+                    const pohInput = targetTr.querySelector('input[id$="_poh"]');
+                    const hoursInput = targetTr.querySelector('input[id$="_hours"]');
+                    
+                    if (isPoh) {
+                        if (cols[0]) pohInput.value = parseFloat(cols[0].replace('%', '').trim());
+                        if (cols.length >= 2 && cols[1]) hoursInput.value = parseFloat(cols[1].trim());
+                    } else {
+                        if (cols[0]) hoursInput.value = parseFloat(cols[0].trim());
+                    }
+                }
             });
         };
 
-        function handlePaste(e, startRow, startCol) {
-            e.preventDefault();
-            const pasteData = (e.clipboardData || window.clipboardData).getData('text');
-            if (!pasteData) return;
-
-            // 依據換行符號切割列
-            const rows = pasteData.split(/\r\n|\n|\r/);
-            
-            for (let i = 0; i < rows.length; i++) {
-                if (rows[i].trim() === '') continue; // 略過空列
-                // 依據 Tab 鍵切割欄
-                const cells = rows[i].split('\t');
-                
-                for (let j = 0; j < cells.length; j++) {
-                    const targetRow = startRow + i;
-                    const targetCol = startCol + j;
-                    
-                    // 確保沒有超出輸入框範圍
-                    if (targetRow < inputGrid.length && targetCol < 2) {
-                        const cellValue = cells[j].trim().replace(/,/g, ''); // 移除可能的千分位逗號
-                        if (cellValue !== '' && !isNaN(cellValue)) {
-                            inputGrid[targetRow][targetCol].value = cellValue;
+        async function loadData(dateStr) {
+            try {
+                const docSnap = await getDoc(doc(db, "production_data", dateStr));
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    lines.forEach(line => {
+                        if (data[line.id]) {
+                            document.getElementById(`${line.id}_poh`).value = (data[line.id].poh * 100).toFixed(2);
+                            document.getElementById(`${line.id}_hours`).value = data[line.id].hours;
+                        } else {
+                            document.getElementById(`${line.id}_poh`).value = '';
+                            document.getElementById(`${line.id}_hours`).value = '';
                         }
-                    }
+                    });
+                } else {
+                    document.querySelectorAll('.input-box').forEach(el => el.value = '');
                 }
+            } catch(e) {
+                console.error(e);
             }
         }
 
-        document.getElementById('input-date').addEventListener('change', async function(e) {
-            const date = new Date(this.value);
-            if (date.getDay() === 0) {
-                alert("🔴 週日為假日，系統鎖定不可輸入！");
-                this.value = '';
-                document.querySelectorAll('.input-box').forEach(el => el.value = '');
-                return;
-            }
-            
-            document.getElementById('save-status').innerText = "讀取中...";
-            try {
-                const docRef = doc(db, "production_data", this.value);
-                const docSnap = await getDoc(docRef);
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    allLines.forEach(line => {
-                        if (data[line.id]) {
-                            document.getElementById(`input_${line.id}_poh`).value = (data[line.id].poh * 100).toFixed(2);
-                            document.getElementById(`input_${line.id}_hours`).value = data[line.id].hours;
-                        } else {
-                            document.getElementById(`input_${line.id}_poh`).value = '';
-                            document.getElementById(`input_${line.id}_hours`).value = '';
-                        }
-                    });
-                    document.getElementById('save-status').innerText = "已載入歷史資料。您可以直接貼上 Excel 覆蓋。";
-                } else {
-                    document.querySelectorAll('.input-box').forEach(el => el.value = '');
-                    document.getElementById('save-status').innerText = "無歷史資料，請開始輸入。支援從 Excel 圈選後直接貼上。";
-                }
-            } catch (error) {
-                console.error("Firebase 連線錯誤:", error);
-                document.getElementById('save-status').innerText = "⚠️ 讀取失敗，請重新整理頁面。";
-            }
-        });
-
         window.saveData = async function() {
-            if (!auth.currentUser) return alert("系統尚未連線，請稍後再試。");
-            
-            const dateStr = document.getElementById('input-date').value;
-            if (!dateStr) return alert("請先選擇日期！");
-
-            const btn = document.querySelector('.save-btn');
-            btn.innerText = "儲存中...";
-            btn.disabled = true;
+            const dateStr = document.getElementById('date-picker').value;
+            if (!dateStr) return alert("请先选择日期！");
 
             const data = {};
-            allLines.forEach(line => {
-                const poh = document.getElementById(`input_${line.id}_poh`).value;
-                const hours = document.getElementById(`input_${line.id}_hours`).value;
+            lines.forEach(line => {
+                const poh = document.getElementById(`${line.id}_poh`).value;
+                const hours = document.getElementById(`${line.id}_hours`).value;
                 if (poh !== '' && hours !== '') {
                     data[line.id] = {
-                        poh: parseFloat(poh) / 100, // 存入小數 (80% -> 0.8)
+                        poh: parseFloat(poh) / 100, // 存入小数格式
                         hours: parseFloat(hours)
                     };
                 }
             });
 
             try {
+                const btn = document.getElementById('save-btn');
+                btn.innerText = "保存中...";
                 await setDoc(doc(db, "production_data", dateStr), data);
-                document.getElementById('save-status').innerText = "✅ 儲存成功！時間：" + new Date().toLocaleTimeString();
-                alert("數據保存成功！");
+                btn.innerText = "一键保存提交";
+                alert("✅ 数据保存成功！");
             } catch (e) {
-                console.error(e);
-                alert("保存失敗，請檢查網路：" + e.message);
-                document.getElementById('save-status').innerText = "⚠️ 儲存失敗。";
-            } finally {
-                btn.innerText = "一鍵保存提交";
-                btn.disabled = false;
+                alert("❌ 保存失败：" + e.message);
+                document.getElementById('save-btn').innerText = "一键保存提交";
             }
         }
     </script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; margin: 0; padding: 20px; color: #333; }
-        .container { max-width: 800px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-        h2 { text-align: center; color: #2c3e50; margin-bottom: 5px; }
-        .subtitle { text-align: center; color: #7f8c8d; font-size: 14px; margin-bottom: 20px; }
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; color: #333; }
+        .login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #2c3e50; z-index: 9999; display: flex; align-items: center; justify-content: center; }
+        .login-box { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); text-align: center; width: 300px; }
+        .login-box input { width: 90%; padding: 12px; margin-bottom: 20px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px; }
+        .login-box button { width: 100%; padding: 12px; background: #3182ce; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; }
+        .login-box button:hover { background: #2b6cb0; }
         
-        .controls { text-align: center; margin-bottom: 20px; background: #ecf0f1; padding: 15px; border-radius: 8px; }
-        .controls input[type="date"] { padding: 10px; font-size: 16px; border: 1px solid #bdc3c7; border-radius: 4px; margin: 0 10px; font-family: inherit;}
+        .container { max-width: 800px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        h2 { text-align: center; color: #1a365d; border-bottom: 2px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 25px; }
+        .date-section { text-align: center; margin-bottom: 20px; font-size: 16px; }
+        .date-section input { padding: 8px 15px; font-size: 16px; border: 1px solid #cbd5e0; border-radius: 4px; }
         
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { padding: 12px 10px; text-align: center; border: 1px solid #e0e0e0; }
-        th { background-color: #34495e; color: white; font-size: 16px; font-weight: 500;}
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        th, td { padding: 12px; text-align: center; border: 1px solid #e2e8f0; }
+        th { background-color: #1a365d; color: white; font-weight: 500; }
+        .group-header { background-color: #edf2f7; font-weight: bold; text-align: left; padding-left: 15px; color: #2d3748; }
+        tr.data-row:nth-child(even) { background-color: #fafbfc; }
+        tr.data-row:hover { background-color: #ebf4ff; }
         
-        .group-header { background-color: #d2d7d3; font-weight: bold; text-align: left; padding-left: 20px; font-size: 18px; color: #2c3e50; }
-        .even-row { background-color: #ffffff; }
-        .odd-row { background-color: #f8f9fa; }
-        .even-row:hover, .odd-row:hover { background-color: #e8f4f8; }
+        .line-name { font-weight: 600; color: #4a5568; }
+        .input-box { width: 85%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; text-align: center; font-size: 14px; }
+        .input-box:focus { border-color: #3182ce; outline: none; background-color: #ebf8ff; box-shadow: 0 0 0 2px rgba(49,130,206,0.2); }
         
-        .line-name { font-weight: 600; color: #2c3e50;}
-        
-        /* 輸入框顏色區分 */
-        input[id$="_poh"] { background-color: #fdfbf7; border-color: #f39c12;}
-        input[id$="_hours"] { background-color: #f4f8fb; border-color: #3498db;}
-        
-        .input-box { width: 85%; padding: 10px; border: 1px solid #aaa; border-radius: 4px; text-align: center; font-size: 16px; transition: 0.2s;}
-        .input-box:focus { outline: 2px solid #2ecc71; background-color: #fff; }
-        
-        .save-btn { display: block; width: 100%; padding: 18px; margin-top: 25px; background-color: #27ae60; color: white; font-size: 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.3s; box-shadow: 0 4px 6px rgba(39, 174, 96, 0.3);}
-        .save-btn:hover { background-color: #2ecc71; transform: translateY(-2px); box-shadow: 0 6px 8px rgba(39, 174, 96, 0.4);}
-        #save-status { text-align: center; margin-top: 15px; color: #e67e22; font-size: 15px; font-weight: 500;}
-        .tips { margin-top: 20px; font-size: 13px; color: #95a5a6; text-align: center;}
+        .save-btn { display: block; width: 100%; padding: 15px; background-color: #2f855a; color: white; font-size: 18px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
+        .save-btn:hover { background-color: #276749; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h2>📝 生產線每日數據輸入</h2>
-        <div class="subtitle">支援從 Excel 圈選多個欄位直接 Ctrl+V 貼上</div>
-        
-        <div class="controls">
-            <label style="font-weight: bold; color: #2c3e50;">選擇輸入日期：</label>
-            <input type="date" id="input-date">
+    <div id="login-overlay" class="login-overlay">
+        <div class="login-box">
+            <h2 style="border:none; margin-bottom:10px;">系统登录</h2>
+            <p style="color:#718096; font-size:14px; margin-bottom:20px;">数据录入端</p>
+            <input type="password" id="pwd-input" placeholder="请输入访问密码">
+            <button onclick="checkPassword()">进入系统</button>
         </div>
-        
+    </div>
+
+    <div class="container">
+        <h2>📊 生产线数据每日录入</h2>
+        <div class="date-section">
+            <label for="date-picker" style="font-weight:bold; color:#2d3748;">请选择日期：</label>
+            <input type="date" id="date-picker">
+        </div>
         <table>
             <thead>
                 <tr>
-                    <th width="20%">線別</th>
-                    <th width="40%">POH達標率 (%)</th>
-                    <th width="40%">實際工時</th>
+                    <th width="30%">线别</th>
+                    <th width="35%">POH达标率 (%)</th>
+                    <th width="35%">工时 (H)</th>
                 </tr>
             </thead>
-            <tbody id="input-table-body">
-                <!-- Javascript 動態生成輸入框 -->
+            <tbody id="table-body">
+                <!-- 动态生成 -->
             </tbody>
         </table>
-        
-        <button class="save-btn" onclick="saveData()">一鍵保存提交</button>
-        <div id="save-status">準備連線...</div>
-        
-        <div class="tips">
-            💡 提示：在 Excel 中圈選對應的「達標率」與「工時」兩欄（不含標題），點擊網頁的第一個輸入框，按下 Ctrl+V 即可自動填滿。
-        </div>
+        <button id="save-btn" class="save-btn" onclick="saveData()">一键保存提交</button>
     </div>
 </body>
 </html>
