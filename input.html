@@ -4,26 +4,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>生产线数据录入系统</title>
-    <!-- 引入 Excel 解析库 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
-        // 请替换为您真实的 Firebase Config
         const firebaseConfig = {
-            apiKey: "YOUR_API_KEY",
-            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-            projectId: "YOUR_PROJECT_ID",
-            storageBucket: "YOUR_PROJECT_ID.appspot.com",
-            messagingSenderId: "YOUR_MESSAGING_ID",
-            appId: "YOUR_APP_ID"
+          apiKey: "AIzaSyAMckSKafxLho2CR5PVe8KLJ6dYAEIJiZI",
+          authDomain: "lfy-dashboard.firebaseapp.com",
+          databaseURL: "https://lfy-dashboard-default-rtdb.asia-southeast1.firebasedatabase.app",
+          projectId: "lfy-dashboard",
+          storageBucket: "lfy-dashboard.firebasestorage.app",
+          messagingSenderId: "765435998608",
+          appId: "1:765435998608:web:220c0534494262c4924315"
         };
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // 登录密码检查
         const ACCESS_PASSWORD = "888888"; 
         window.checkPassword = function() {
             const pwd = document.getElementById('pwd-input').value;
@@ -73,7 +71,6 @@
                 tbody.appendChild(tr);
             });
 
-            // 日期选择事件
             document.getElementById('date-picker').addEventListener('change', function(e) {
                 const date = new Date(this.value);
                 if (date.getDay() === 0) {
@@ -85,7 +82,6 @@
                 }
             });
 
-            // 支持 Excel 批量粘贴 (Ctrl+V)
             document.addEventListener('paste', function(e) {
                 if (e.target.tagName !== 'INPUT' || !e.target.classList.contains('input-box')) return;
                 e.preventDefault();
@@ -149,25 +145,26 @@
                 const hours = document.getElementById(`${line.id}_hours`).value;
                 if (poh !== '' && hours !== '') {
                     data[line.id] = {
-                        poh: parseFloat(poh) / 100, // 存入小数格式
+                        poh: parseFloat(poh) / 100,
                         hours: parseFloat(hours)
                     };
                 }
             });
 
+            const btn = document.getElementById('save-btn');
             try {
-                const btn = document.getElementById('save-btn');
                 btn.innerText = "保存中...";
+                btn.disabled = true;
                 await setDoc(doc(db, "production_data", dateStr), data);
-                btn.innerText = "一键保存提交";
                 alert("✅ 数据保存成功！");
             } catch (e) {
                 alert("❌ 保存失败：" + e.message);
-                document.getElementById('save-btn').innerText = "一键保存提交";
+            } finally {
+                btn.innerText = "一键保存提交";
+                btn.disabled = false;
             }
         }
 
-        // 处理 Excel 历史数据导入
         window.handleExcelUpload = function(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -194,7 +191,6 @@
                         const lineName = jsonPoh[i][0];
                         if(!lineName) continue;
                         
-                        // 寻找对应 ID
                         const lineObj = lines.find(l => l.name === lineName);
                         const lineId = lineObj ? lineObj.id : lineName;
                         
@@ -234,29 +230,23 @@
         .login-box input { width: 90%; padding: 12px; margin-bottom: 20px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px; }
         .login-box button { width: 100%; padding: 12px; background: #3182ce; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; }
         .login-box button:hover { background: #2b6cb0; }
-        
         .container { max-width: 800px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
         .header-bar { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 25px; }
         h2 { color: #1a365d; margin: 0; }
-        
         .upload-btn { background: #edf2f7; color: #4a5568; border: 1px solid #cbd5e0; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; }
         .upload-btn:hover { background: #e2e8f0; }
         input[type="file"] { display: none; }
-
         .date-section { text-align: center; margin-bottom: 20px; font-size: 16px; }
         .date-section input { padding: 8px 15px; font-size: 16px; border: 1px solid #cbd5e0; border-radius: 4px; }
-        
         table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
         th, td { padding: 12px; text-align: center; border: 1px solid #e2e8f0; }
         th { background-color: #1a365d; color: white; font-weight: 500; }
         .group-header { background-color: #edf2f7; font-weight: bold; text-align: left; padding-left: 15px; color: #2d3748; }
         tr.data-row:nth-child(even) { background-color: #fafbfc; }
         tr.data-row:hover { background-color: #ebf4ff; }
-        
         .line-name { font-weight: 600; color: #4a5568; }
         .input-box { width: 85%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; text-align: center; font-size: 14px; }
         .input-box:focus { border-color: #3182ce; outline: none; background-color: #ebf8ff; box-shadow: 0 0 0 2px rgba(49,130,206,0.2); }
-        
         .save-btn { display: block; width: 100%; padding: 15px; background-color: #2f855a; color: white; font-size: 18px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
         .save-btn:hover { background-color: #276749; }
     </style>
@@ -292,7 +282,6 @@
                 </tr>
             </thead>
             <tbody id="table-body">
-                <!-- 动态生成 -->
             </tbody>
         </table>
         <button id="save-btn" class="save-btn" onclick="saveData()">一键保存提交</button>
