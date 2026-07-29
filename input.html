@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>生产线数据录入终端</title>
-    <!-- 引入 Excel 解析库 -->
+    <title>生产线数据录入终端 (动态架构版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
@@ -22,60 +21,75 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-
         const ACCESS_PASSWORD = "888888"; 
+        
+        // 存放從資料庫動態讀取的線別資訊
+        window.lines = []; 
+
         window.checkPassword = function() {
             const pwd = document.getElementById('pwd-input').value;
             if (pwd === ACCESS_PASSWORD) {
                 document.getElementById('login-overlay').style.display = 'none';
                 sessionStorage.setItem('lfy_auth', 'true');
+                initSystem(); // 登入成功後初始化系統
             } else {
                 alert("密码错误，请重试！");
             }
         };
 
-        const lines = [
-            { id: "cut", name: "裁断", group: "裁断" },
-            { id: "prep", name: "准备", group: "准备" },
-            { id: "sock", name: "袜套", group: "袜套" },
-            ...Array.from({length: 10}, (_, i) => ({ id: `stitchA${i+1}`, name: `针车A${i+1}`, group: "针车A" })),
-            { id: "stitchA_sample", name: "针车A-销样组", group: "针车A" },
-            ...Array.from({length: 14}, (_, i) => ({ id: `stitchB${i+11}`, name: `针车B${i+11}`, group: "针车B" })),
-            ...['A','B','C','D','E','F'].map(c => ({ id: `mold${c}`, name: `成型${c}`, group: "成型" })),
-            { id: "pull", name: "拉帮组", group: "拉帮" },
-            ...Array.from({length: 5}, (_, i) => ({ id: `bottom${i+1}`, name: `组底${i+1}`, group: "组底" }))
-        ];
-
         window.onload = () => {
             if (sessionStorage.getItem('lfy_auth') === 'true') {
                 document.getElementById('login-overlay').style.display = 'none';
+                initSystem(); // 已登入則直接初始化
             }
-
             document.getElementById('pwd-input').addEventListener('keypress', function (e) {
                 if (e.key === 'Enter') window.checkPassword();
             });
+        };
 
-            const tbody = document.getElementById('table-body');
-            let currentGroup = '';
-            
-            lines.forEach((line) => {
-                if(line.group !== currentGroup) {
-                    currentGroup = line.group;
-                    const groupRow = document.createElement('tr');
-                    groupRow.className = "group-header";
-                    groupRow.innerHTML = `<td colspan="3">${currentGroup}</td>`;
-                    tbody.appendChild(groupRow);
+        // 讀取架構並生成表格
+        async function initSystem() {
+            try {
+                const docSnap = await getDoc(doc(db, "system_config", "layout"));
+                if (docSnap.exists()) {
+                    const config = docSnap.data();
+                    window.lines = [];
+                    
+                    const tbody = document.getElementById('table-body');
+                    tbody.innerHTML = ''; // 清空原本內容
+
+                    config.groups.forEach(group => {
+                        // 插入群組標題
+                        const groupRow = document.createElement('tr');
+                        groupRow.className = "group-header";
+                        groupRow.innerHTML = `<td colspan="3">${group.name}</td>`;
+                        tbody.appendChild(groupRow);
+
+                        // 插入該群組的線別
+                        group.lines.forEach(line => {
+                            window.lines.push({ id: line.id, name: line.name, group: group.name });
+                            const tr = document.createElement('tr');
+                            tr.className = "data-row";
+                            tr.innerHTML = `
+                                <td class="line-name">${line.name}</td>
+                                <td><input type="number" step="0.01" id="${line.id}_poh" class="input-box" placeholder="例如: 95.5"></td>
+                                <td><input type="number" step="0.5" id="${line.id}_hours" class="input-box" placeholder="例如: 640"></td>
+                            `;
+                            tbody.appendChild(tr);
+                        });
+                    });
+                    
+                    bindEvents();
+                } else {
+                    alert("⚠️ 尚未建立产线架构！请先前往 config.html 设定并保存架构。");
                 }
-                const tr = document.createElement('tr');
-                tr.className = "data-row";
-                tr.innerHTML = `
-                    <td class="line-name">${line.name}</td>
-                    <td><input type="number" step="0.01" id="${line.id}_poh" class="input-box" placeholder="例如: 95.5"></td>
-                    <td><input type="number" step="0.5" id="${line.id}_hours" class="input-box" placeholder="例如: 640"></td>
-                `;
-                tbody.appendChild(tr);
-            });
+            } catch (e) {
+                console.error(e);
+                alert("读取架构设定失败！");
+            }
+        }
 
+        function bindEvents() {
             document.getElementById('date-picker').addEventListener('change', function(e) {
                 const date = new Date(this.value);
                 if (date.getDay() === 0) {
@@ -116,28 +130,30 @@
                     }
                 }
             });
-        };
+        }
 
         async function loadData(dateStr) {
             try {
                 const docSnap = await getDoc(doc(db, "production_data", dateStr));
                 if (docSnap.exists()) {
                     const data = docSnap.data();
-                    lines.forEach(line => {
-                        if (data[line.id]) {
-                            document.getElementById(`${line.id}_poh`).value = (data[line.id].poh * 100).toFixed(2);
-                            document.getElementById(`${line.id}_hours`).value = data[line.id].hours;
-                        } else {
-                            document.getElementById(`${line.id}_poh`).value = '';
-                            document.getElementById(`${line.id}_hours`).value = '';
+                    window.lines.forEach(line => {
+                        const pohEl = document.getElementById(`${line.id}_poh`);
+                        const hoursEl = document.getElementById(`${line.id}_hours`);
+                        if (pohEl && hoursEl) {
+                            if (data[line.id]) {
+                                pohEl.value = (data[line.id].poh * 100).toFixed(2);
+                                hoursEl.value = data[line.id].hours;
+                            } else {
+                                pohEl.value = '';
+                                hoursEl.value = '';
+                            }
                         }
                     });
                 } else {
                     document.querySelectorAll('.input-box').forEach(el => el.value = '');
                 }
-            } catch(e) {
-                console.error(e);
-            }
+            } catch(e) { console.error(e); }
         }
 
         window.saveData = async function() {
@@ -145,15 +161,15 @@
             if (!dateStr) return alert("请先选择数据日期！");
 
             const data = {};
-            lines.forEach(line => {
-                const poh = document.getElementById(`${line.id}_poh`).value;
-                const hours = document.getElementById(`${line.id}_hours`).value;
-                // 允许存入空白，只要有数值才记录
-                if (poh !== '' && hours !== '') {
-                    data[line.id] = {
-                        poh: parseFloat(poh) / 100,
-                        hours: parseFloat(hours)
-                    };
+            window.lines.forEach(line => {
+                const pohEl = document.getElementById(`${line.id}_poh`);
+                const hoursEl = document.getElementById(`${line.id}_hours`);
+                if(pohEl && hoursEl) {
+                    const poh = pohEl.value;
+                    const hours = hoursEl.value;
+                    if (poh !== '' && hours !== '') {
+                        data[line.id] = { poh: parseFloat(poh) / 100, hours: parseFloat(hours) };
+                    }
                 }
             });
 
@@ -163,10 +179,8 @@
                 btn.disabled = true;
                 await setDoc(doc(db, "production_data", dateStr), data, { merge: true });
                 alert("✅ 数据同步至云端成功！");
-            } catch (e) {
-                console.error(e);
-                alert("❌ 保存失败：" + e.message);
-            } finally {
+            } catch (e) { alert("❌ 保存失败：" + e.message); } 
+            finally {
                 btn.innerText = "🚀 一键同步至云端";
                 btn.disabled = false;
             }
@@ -198,8 +212,8 @@
                         const lineName = jsonPoh[i][0];
                         if(!lineName) continue;
                         
-                        const lineObj = lines.find(l => l.name === lineName);
-                        const lineId = lineObj ? lineObj.id : lineName;
+                        const lineObj = window.lines.find(l => l.name === lineName);
+                        const lineId = lineObj ? lineObj.id : lineName; // 使用動態 ID 對應
                         
                         for(let j = 1; j < dates.length; j++) {
                             let dateRaw = dates[j];
@@ -239,7 +253,6 @@
                         await setDoc(doc(db, "production_data", date), payload, { merge: true });
                     }
                     alert(`✅ 数据清洗完毕，成功导入 ${count} 天记录！`);
-                    
                 } catch (err) {
                     alert("❌ 导入异常: " + err.message);
                 } finally {
@@ -255,9 +268,7 @@
         .login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(11, 15, 25, 0.95); z-index: 9999; display: flex; align-items: center; justify-content: center; }
         .login-box { background: #161b22; padding: 40px; border-radius: 12px; border: 1px solid #30363d; text-align: center; width: 300px; box-shadow: 0 0 30px rgba(0, 229, 255, 0.1); }
         .login-box input { width: 90%; padding: 12px; margin-bottom: 20px; background: #0d1117; color: #fff; border: 1px solid #30363d; border-radius: 6px; outline: none; }
-        .login-box input:focus { border-color: #00e5ff; box-shadow: 0 0 8px rgba(0, 229, 255, 0.4); }
         .login-box button { width: 100%; padding: 12px; background: linear-gradient(90deg, #00d2ff 0%, #3a7bd5 100%); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight:bold; letter-spacing: 2px;}
-        .login-box button:hover { opacity: 0.9; box-shadow: 0 0 15px rgba(0, 229, 255, 0.5); }
         .container { max-width: 800px; margin: auto; background: #111827; padding: 30px; border-radius: 12px; border: 1px solid #1f2937; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
         .header-bar { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 15px; margin-bottom: 25px; }
         h2 { color: #00e5ff; margin: 0; font-size: 22px; text-shadow: 0 0 10px rgba(0, 229, 255, 0.3); display: flex; align-items: center; gap: 10px; }
@@ -278,10 +289,10 @@
         tr.data-row:hover { background-color: #1f2937; }
         .line-name { font-weight: bold; color: #e2e8f0; }
         .input-box { width: 85%; padding: 8px; background: #0b0f19; color: #00e676; border: 1px solid #334155; border-radius: 4px; text-align: center; font-size: 14px; font-weight: bold;}
-        .input-box:focus { border-color: #00e5ff; box-shadow: 0 0 8px rgba(0, 229, 255, 0.4); outline: none; }
-        .save-btn { display: block; width: 100%; padding: 15px; background: linear-gradient(90deg, #059669 0%, #10b981 100%); color: white; font-size: 18px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; letter-spacing: 2px; transition: 0.3s; }
+        .input-box:focus { border-color: #00e5ff; outline: none; box-shadow: 0 0 8px rgba(0, 229, 255, 0.4); }
+        .save-btn { display: block; width: 100%; padding: 15px; background: linear-gradient(90deg, #059669 0%, #10b981 100%); color: white; font-size: 18px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; letter-spacing: 2px; }
         .save-btn:hover { opacity: 0.9; box-shadow: 0 0 15px rgba(16, 185, 129, 0.5); }
-        .save-btn:disabled { background: #334155; color: #94a3b8; cursor: not-allowed; box-shadow: none; }
+        .save-btn:disabled { background: #334155; color: #94a3b8; cursor: not-allowed; }
     </style>
 </head>
 <body>
@@ -314,6 +325,7 @@
                 </tr>
             </thead>
             <tbody id="table-body">
+                <tr><td colspan="3" style="text-align:center; padding:30px;">正在动态加载产线架构...</td></tr>
             </tbody>
         </table>
         <button id="save-btn" class="save-btn" onclick="saveData()">🚀 一键同步至云端</button>
