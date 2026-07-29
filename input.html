@@ -7,7 +7,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        // ★ 核心改動：替換為 Realtime Database SDK (包含 update 語法做 merge)
+        import { getDatabase, ref, get, update } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 
         const firebaseConfig = {
           apiKey: "AIzaSyAMckSKafxLho2CR5PVe8KLJ6dYAEIJiZI",
@@ -20,7 +21,7 @@
         };
 
         const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
+        const db = getDatabase(app); 
         const ACCESS_PASSWORD = "888888"; 
         
         window.lines = []; 
@@ -48,7 +49,6 @@
                 if (e.key === 'Enter') window.checkPassword();
             });
             
-            // 綁定日期選擇器
             document.getElementById('date-picker').addEventListener('change', function(e) {
                 const date = new Date(this.value);
                 if (date.getDay() === 0) {
@@ -60,7 +60,6 @@
                 }
             });
 
-            // 綁定貼上功能
             document.addEventListener('paste', handlePaste);
         };
 
@@ -69,7 +68,6 @@
             localStorage.setItem('selected_factory', window.currentFactory);
             document.getElementById('table-body').innerHTML = '<tr><td colspan="3" style="text-align:center; padding:30px;">切换厂区中...</td></tr>';
             
-            // 如果日期已經選了，清空它以防看錯
             document.getElementById('date-picker').value = '';
             initSystem();
         }
@@ -80,11 +78,11 @@
 
             try {
                 const layoutDocId = window.currentFactory === 'lfy' ? "layout" : "ly_layout";
-                const docSnap = await getDoc(doc(db, "system_config", layoutDocId));
+                const snapshot = await get(ref(db, 'system_config/' + layoutDocId));
                 
                 const tbody = document.getElementById('table-body');
-                if (docSnap.exists()) {
-                    const config = docSnap.data();
+                if (snapshot.exists()) {
+                    const config = snapshot.val();
                     window.lines = [];
                     tbody.innerHTML = ''; 
 
@@ -145,9 +143,9 @@
         async function loadData(dateStr) {
             try {
                 const collectionName = window.currentFactory === 'lfy' ? "production_data" : "ly_production_data";
-                const docSnap = await getDoc(doc(db, collectionName, dateStr));
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
+                const snapshot = await get(ref(db, collectionName + '/' + dateStr));
+                if (snapshot.exists()) {
+                    const data = snapshot.val();
                     window.lines.forEach(line => {
                         const pohEl = document.getElementById(`${line.id}_poh`);
                         const hoursEl = document.getElementById(`${line.id}_hours`);
@@ -188,11 +186,12 @@
                 btn.innerText = "数据上传中...";
                 btn.disabled = true;
                 const collectionName = window.currentFactory === 'lfy' ? "production_data" : "ly_production_data";
-                await setDoc(doc(db, collectionName, dateStr), data, { merge: true });
+                // ★ 核心改動：使用 update 來達成 merge: true 的效果
+                await update(ref(db, collectionName + '/' + dateStr), data);
                 alert(`✅ ${window.currentFactory.toUpperCase()} 厂数据同步至云端成功！`);
             } catch (e) { alert("❌ 保存失败：" + e.message); } 
             finally {
-                btn.innerText = "🚀 一键同步至云端";
+                btn.innerText = "🚀 一键同步当前厂区至云端";
                 btn.disabled = false;
             }
         }
@@ -266,13 +265,14 @@
 
                     const collectionName = window.currentFactory === 'lfy' ? "production_data" : "ly_production_data";
                     for(const [date, payload] of Object.entries(firebaseData)) {
-                        await setDoc(doc(db, collectionName, date), payload, { merge: true });
+                        // ★ 核心改動：Excel 匯入的 merge 也改用 update
+                        await update(ref(db, collectionName + '/' + date), payload);
                     }
                     alert(`✅ ${factoryUpper} 厂数据清洗完毕，成功导入 ${count} 天记录！`);
                 } catch (err) {
                     alert("❌ 导入异常: " + err.message);
                 } finally {
-                    document.getElementById('upload-btn-label').innerHTML = `<svg style="width:16px; margin-right:5px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg> 批量导入历史 Excel`;
+                    document.getElementById('upload-btn-label').innerHTML = `<svg style="width:16px; margin-right:5px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg> 批量导入当前厂历史 Excel`;
                     event.target.value = '';
                 }
             };
