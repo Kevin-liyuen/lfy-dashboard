@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统架构建模中心</title>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+          apiKey: "AIzaSyAMckSKafxLho2CR5PVe8KLJ6dYAEIJiZI",
+          authDomain: "lfy-dashboard.firebaseapp.com",
+          databaseURL: "https://lfy-dashboard-default-rtdb.asia-southeast1.firebasedatabase.app",
+          projectId: "lfy-dashboard",
+          storageBucket: "lfy-dashboard.firebasestorage.app",
+          messagingSenderId: "765435998608",
+          appId: "1:765435998608:web:220c0534494262c4924315"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        const ACCESS_PASSWORD = "888888"; 
+        
+        // 核心狀態：用來存放動態產線結構
+        window.systemConfig = { groups: [] };
+
+        window.checkPassword = function() {
+            const pwd = document.getElementById('pwd-input').value;
+            if (pwd === ACCESS_PASSWORD) {
+                document.getElementById('login-overlay').style.display = 'none';
+                sessionStorage.setItem('lfy_auth_cfg', 'true');
+                loadConfig();
+            } else {
+                alert("密码错误！");
+            }
+        };
+
+        window.onload = () => {
+            if (sessionStorage.getItem('lfy_auth_cfg') === 'true') {
+                document.getElementById('login-overlay').style.display = 'none';
+                loadConfig();
+            }
+            document.getElementById('pwd-input').addEventListener('keypress', function (e) {
+                if (e.key === 'Enter') window.checkPassword();
+            });
+        };
+
+        // 讀取設定
+        async function loadConfig() {
+            try {
+                const docSnap = await getDoc(doc(db, "system_config", "layout"));
+                if (docSnap.exists()) {
+                    window.systemConfig = docSnap.data();
+                } else {
+                    // 第一次使用：自動帶入原本的預設架構，確保歷史資料不斷層
+                    window.systemConfig = {
+                        groups: [
+                            { name: "裁断", isFactoryTotal: true, lines: [{ id: "cut", name: "裁断" }] },
+                            { name: "准备", isFactoryTotal: true, lines: [{ id: "prep", name: "准备" }] },
+                            { name: "袜套", isFactoryTotal: true, lines: [{ id: "sock", name: "袜套" }] },
+                            { name: "针车A", isFactoryTotal: true, lines: [
+                                ...Array.from({length: 10}, (_, i) => ({ id: `stitchA${i+1}`, name: `针车A${i+1}` })),
+                                { id: "stitchA_sample", name: "针车A-销样组" }
+                            ]},
+                            { name: "针车B", isFactoryTotal: true, lines: 
+                                Array.from({length: 14}, (_, i) => ({ id: `stitchB${i+11}`, name: `针车B${i+11}` }))
+                            },
+                            { name: "成型", isFactoryTotal: true, lines: 
+                                ['A','B','C','D','E','F'].map(c => ({ id: `mold${c}`, name: `成型${c}` }))
+                            },
+                            { name: "拉帮", isFactoryTotal: false, lines: [{ id: "pull", name: "拉帮组" }] },
+                            { name: "组底", isFactoryTotal: false, lines: 
+                                Array.from({length: 5}, (_, i) => ({ id: `bottom${i+1}`, name: `组底${i+1}` }))
+                            }
+                        ]
+                    };
+                }
+                renderUI();
+            } catch (e) {
+                console.error(e);
+                alert("读取设定失败：" + e.message);
+            }
+        }
+
+        // 渲染畫面
+        window.renderUI = function() {
+            const container = document.getElementById('config-container');
+            container.innerHTML = '';
+
+            window.systemConfig.groups.forEach((group, gIndex) => {
+                const groupDiv = document.createElement('div');
+                groupDiv.className = 'group-card';
+                
+                let linesHtml = group.lines.map((line, lIndex) => `
+                    <div class="line-item">
+                        <input type="text" class="input-line-name" value="${line.name}" onchange="updateLine(${gIndex}, ${lIndex}, 'name', this.value)" placeholder="线别名称 (例: 针车C1)">
+                        <input type="text" class="input-line-id" value="${line.id}" onchange="updateLine(${gIndex}, ${lIndex}, 'id', this.value)" placeholder="资料库ID (极重要)">
+                        <button class="btn-del-line" onclick="removeLine(${gIndex}, ${lIndex})">🗑️</button>
+                    </div>
+                `).join('');
+
+                groupDiv.innerHTML = `
+                    <div class="group-header">
+                        <input type="text" class="input-group-name" value="${group.name}" onchange="updateGroup(${gIndex}, 'name', this.value)" placeholder="部门名称 (例: 针车A组)">
+                        <div style="display:flex; align-items:center; gap: 15px;">
+                            <label class="checkbox-label">
+                                <input type="checkbox" ${group.isFactoryTotal ? 'checked' : ''} onchange="updateGroup(${gIndex}, 'isFactoryTotal', this.checked)">
+                                计入全厂综合%
+                            </label>
+                            <button class="btn-del-group" onclick="removeGroup(${gIndex})">删除部门</button>
+                        </div>
+                    </div>
+                    <div class="lines-container">
+                        ${linesHtml}
+                        <button class="btn-add-line" onclick="addLine(${gIndex})">+ 新增线别</button>
+                    </div>
+                `;
+                container.appendChild(groupDiv);
+            });
+        }
+
+        // --- 資料更新操作 ---
+        window.updateGroup = (gIndex, field, value) => { window.systemConfig.groups[gIndex][field] = value; }
+        window.updateLine = (gIndex, lIndex, field, value) => { window.systemConfig.groups[gIndex].lines[lIndex][field] = value; }
+        
+        window.addGroup = () => {
+            window.systemConfig.groups.push({ name: "", isFactoryTotal: true, lines: [] });
+            renderUI();
+        }
+        window.removeGroup = (gIndex) => {
+            if(confirm("确定要删除此部门吗？(这不会删除过去的数据，只是界面上不再显示)")) {
+                window.systemConfig.groups.splice(gIndex, 1);
+                renderUI();
+            }
+        }
+        window.addLine = (gIndex) => {
+            window.systemConfig.groups[gIndex].lines.push({ id: "", name: "" });
+            renderUI();
+        }
+        window.removeLine = (gIndex, lIndex) => {
+            window.systemConfig.groups[gIndex].lines.splice(lIndex, 1);
+            renderUI();
+        }
+
+        // 保存到 Firestore
+        window.saveConfig = async function() {
+            const btn = document.getElementById('save-btn');
+            try {
+                btn.innerText = "上传保存中...";
+                // 基本驗證
+                for (let g of window.systemConfig.groups) {
+                    if (!g.name) throw new Error("部门名称不能为空");
+                    for (let l of g.lines) {
+                        if (!l.name || !l.id) throw new Error("线别的名称与资料库ID均不能为空");
+                    }
+                }
+
+                await setDoc(doc(db, "system_config", "layout"), window.systemConfig);
+                alert("✅ 产线架构更新成功！请刷新 Input 或 Dashboard 以套用新设定。");
+            } catch (e) {
+                alert("❌ 保存失败：" + e.message);
+            } finally {
+                btn.innerText = "💾 保存架构设定至云端";
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0b0f19; margin: 0; padding: 20px; color: #94a3b8; }
+        .login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(11, 15, 25, 0.95); z-index: 9999; display: flex; align-items: center; justify-content: center; }
+        .login-box { background: #161b22; padding: 40px; border-radius: 12px; border: 1px solid #30363d; text-align: center; width: 300px; box-shadow: 0 0 30px rgba(0, 229, 255, 0.1); }
+        .login-box input { width: 90%; padding: 12px; margin-bottom: 20px; background: #0d1117; color: #fff; border: 1px solid #30363d; border-radius: 6px; outline: none; }
+        .login-box button { width: 100%; padding: 12px; background: linear-gradient(90deg, #00d2ff 0%, #3a7bd5 100%); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight:bold; }
+        
+        .container { max-width: 900px; margin: auto; background: #111827; padding: 30px; border-radius: 12px; border: 1px solid #1f2937; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
+        .header-bar { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 15px; margin-bottom: 25px; }
+        h2 { color: #00e5ff; margin: 0; font-size: 22px; text-shadow: 0 0 10px rgba(0, 229, 255, 0.3); }
+        
+        .top-controls { margin-bottom: 20px; display: flex; gap: 15px; }
+        .btn-cyan { background: #0891b2; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        .btn-cyan:hover { background: #0ea5e9; }
+        .btn-save { background: linear-gradient(90deg, #059669 0%, #10b981 100%); color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; flex-grow: 1; font-size: 16px;}
+        .btn-save:hover { opacity: 0.9; box-shadow: 0 0 15px rgba(16, 185, 129, 0.5); }
+
+        .group-card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; margin-bottom: 20px; padding: 15px; }
+        .group-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #0f172a; padding-bottom: 15px; margin-bottom: 15px; }
+        .input-group-name { background: #0f172a; color: #00e5ff; border: 1px solid #00e5ff; font-size: 18px; padding: 8px; font-weight: bold; border-radius: 4px; width: 200px; outline:none; }
+        
+        .checkbox-label { color: #e2e8f0; font-weight: bold; cursor: pointer; }
+        .btn-del-group { background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+        
+        .lines-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+        .line-item { background: #0f172a; border: 1px solid #334155; padding: 10px; border-radius: 6px; display: flex; align-items: center; gap: 5px; }
+        .input-line-name { background: #1e293b; color: #e2e8f0; border: 1px solid #475569; padding: 6px; width: 45%; border-radius: 4px; outline:none;}
+        .input-line-id { background: #1e293b; color: #facc15; border: 1px solid #475569; padding: 6px; width: 45%; border-radius: 4px; outline:none; font-family: monospace;}
+        .btn-del-line { background: transparent; border: none; cursor: pointer; font-size: 16px; opacity: 0.7; }
+        .btn-del-line:hover { opacity: 1; }
+        
+        .btn-add-line { background: #334155; color: #e2e8f0; border: 1px dashed #64748b; border-radius: 6px; padding: 10px; cursor: pointer; font-weight: bold; transition: 0.2s;}
+        .btn-add-line:hover { background: #475569; border-color: #94a3b8; }
+        
+        .info-box { background: rgba(0, 229, 255, 0.1); border-left: 4px solid #00e5ff; padding: 10px 15px; margin-bottom: 20px; font-size: 13px; line-height: 1.5; color: #cbd5e1; }
+        .info-box span { color: #facc15; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div id="login-overlay" class="login-overlay">
+        <div class="login-box">
+            <h2 style="justify-content: center; margin-bottom:20px; font-size: 20px;">架构修改权限</h2>
+            <input type="password" id="pwd-input" placeholder="请输入管理密码 (支持Enter)">
+            <button onclick="checkPassword()">验证并进入</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="header-bar">
+            <h2>⚙️ 系统架构建模中心</h2>
+        </div>
+        
+        <div class="info-box">
+            <b>操作须知：</b> 日后若拆分新的部門（例如針車C組），只需點擊「+ 新增部門」。<br>
+            ⚠️ <b>极重要：</b> 右側黃色字體的 <span>资料库ID</span> 決定了能否抓取到歷史數據。若只是改名（如 针车A1 改 针一），ID <b>絕對不要改</b>。若是全新線別，請賦予新的英文/數字 ID（如 <code>stitchC1</code>）。
+        </div>
+
+        <div class="top-controls">
+            <button class="btn-cyan" onclick="addGroup()">+ 新增部门/群组</button>
+            <button id="save-btn" class="btn-save" onclick="saveConfig()">💾 保存架构设定至云端</button>
+        </div>
+
+        <div id="config-container">
+            <!-- 這裡將由 JS 動態渲染部門與線別 -->
+        </div>
+    </div>
+</body>
+</html>
