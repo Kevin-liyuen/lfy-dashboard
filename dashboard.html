@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>企业生产线多周综合看板</title>
+    <title>全局生产线快照看板</title>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
@@ -36,6 +36,9 @@
             if (sessionStorage.getItem('lfy_auth_dash') === 'true') {
                 document.getElementById('login-overlay').style.display = 'none';
             }
+            document.getElementById('pwd-input').addEventListener('keypress', function (e) {
+                if (e.key === 'Enter') window.checkPassword();
+            });
         };
 
         const rowDefinitions = [
@@ -65,12 +68,13 @@
             ...Array.from({length: 5}, (_, i) => ({ type: 'line', name: `组底${i+1}`, id: `bottom${i+1}`, inFactory: false }))
         ];
 
+        // 全新科技風螢光變色邏輯
         function getColorClass(val) {
-            if (val === null || val === undefined || isNaN(val)) return '';
-            if (val < 0.8) return 'bg-red';
-            if (val >= 0.9 && val < 1.0) return 'bg-light-green';
-            if (val >= 1.0) return 'bg-green';
-            return '';
+            if (val === null || val === undefined || isNaN(val)) return 'val-normal';
+            if (val < 0.8) return 'val-red';          // <80%: 螢光紅
+            if (val >= 0.9 && val < 1.0) return 'val-light-green'; // 90~100: 淺螢光綠(或偏黃)
+            if (val >= 1.0) return 'val-green';       // >=100%: 亮螢光綠
+            return 'val-normal';                      // 80~90: 預設暗灰色
         }
 
         window.loadDashboard = async function() {
@@ -82,100 +86,107 @@
             const end = new Date(endDateStr);
             if (start > end) return alert("开始日期不能大于结束日期！");
 
-            const querySnapshot = await getDocs(collection(db, "production_data"));
-            const dbData = {};
-            querySnapshot.forEach(doc => {
-                dbData[doc.id] = doc.data();
-            });
-
-            let weeks = [];
-            let curr = new Date(start);
-            let day = curr.getDay();
-            let diff = curr.getDate() - day + (day === 0 ? -6 : 1);
-            curr.setDate(diff);
-
-            while (curr <= end) {
-                let weekDays = [];
-                let weekStartStr = '';
-                let weekEndStr = '';
-                for (let i = 0; i < 6; i++) {
-                    let d = new Date(curr);
-                    d.setDate(curr.getDate() + i);
-                    let yyyy = d.getFullYear();
-                    let mm = String(d.getMonth() + 1).padStart(2, '0');
-                    let dd = String(d.getDate()).padStart(2, '0');
-                    let dateStr = `${yyyy}-${mm}-${dd}`;
-                    if (i === 0) weekStartStr = `${mm}/${dd}`;
-                    if (i === 5) weekEndStr = `${mm}/${dd}`;
-                    weekDays.push(dateStr);
-                }
-                weeks.push({
-                    title: `${weekStartStr}-${weekEndStr}`,
-                    days: weekDays
+            const btn = document.getElementById('search-btn');
+            btn.innerText = "计算中...";
+            
+            try {
+                const querySnapshot = await getDocs(collection(db, "production_data"));
+                const dbData = {};
+                querySnapshot.forEach(doc => {
+                    dbData[doc.id] = doc.data();
                 });
-                curr.setDate(curr.getDate() + 7);
-            }
 
-            if (weeks.length === 0) return alert("所选范围内没有找到周数据！");
+                let weeks = [];
+                let curr = new Date(start);
+                let day = curr.getDay();
+                let diff = curr.getDate() - day + (day === 0 ? -6 : 1);
+                curr.setDate(diff);
 
-            const theadTr1 = document.getElementById('thead-tr-1');
-            const theadTr2 = document.getElementById('thead-tr-2');
-            theadTr1.innerHTML = '<th rowspan="2" style="min-width:150px;">线别 / 部门</th>';
-            theadTr2.innerHTML = '';
+                while (curr <= end) {
+                    let weekDays = [];
+                    let weekStartStr = '';
+                    let weekEndStr = '';
+                    for (let i = 0; i < 6; i++) {
+                        let d = new Date(curr);
+                        d.setDate(curr.getDate() + i);
+                        let yyyy = d.getFullYear();
+                        let mm = String(d.getMonth() + 1).padStart(2, '0');
+                        let dd = String(d.getDate()).padStart(2, '0');
+                        let dateStr = `${yyyy}-${mm}-${dd}`;
+                        if (i === 0) weekStartStr = `${mm}/${dd}`;
+                        if (i === 5) weekEndStr = `${mm}/${dd}`;
+                        weekDays.push(dateStr);
+                    }
+                    weeks.push({
+                        title: `${weekStartStr}-${weekEndStr}`,
+                        days: weekDays
+                    });
+                    curr.setDate(curr.getDate() + 7);
+                }
 
-            weeks.forEach((week, wIdx) => {
-                theadTr1.innerHTML += `<th colspan="7" class="week-group-header">第 ${wIdx+1} 周 (${week.title})</th>`;
-                ['周一', '周二', '周三', '周四', '周五', '周六'].forEach(dName => {
-                    theadTr2.innerHTML += `<th class="daily-col">${dName}</th>`;
+                if (weeks.length === 0) return alert("所选范围内没有找到周数据！");
+
+                const theadTr1 = document.getElementById('thead-tr-1');
+                const theadTr2 = document.getElementById('thead-tr-2');
+                theadTr1.innerHTML = '<th rowspan="2" class="sticky-col">线别 / 部门</th>';
+                theadTr2.innerHTML = '';
+
+                weeks.forEach((week, wIdx) => {
+                    theadTr1.innerHTML += `<th colspan="7" class="week-group-header">第 ${wIdx+1} 周 (${week.title})</th>`;
+                    ['周一', '周二', '周三', '周四', '周五', '周六'].forEach(dName => {
+                        theadTr2.innerHTML += `<th class="daily-col">${dName}</th>`;
+                    });
+                    theadTr2.innerHTML += `<th class="weekly-avg-header">整周综合</th>`;
                 });
-                theadTr2.innerHTML += `<th class="weekly-avg">整周综合</th>`;
-            });
 
-            const tbody = document.getElementById('table-body');
-            tbody.innerHTML = '';
+                const tbody = document.getElementById('table-body');
+                tbody.innerHTML = '';
 
-            rowDefinitions.forEach(rowDef => {
-                const tr = document.createElement('tr');
-                if (rowDef.type === 'header') {
-                    tr.className = 'section-header-row';
-                    let colSpan = 1 + weeks.length * 7;
-                    tr.innerHTML = `<td colspan="${colSpan}" style="text-align:left; font-weight:bold; background:#e2e8f0; padding-left:15px;">${rowDef.name}</td>`;
-                    tbody.appendChild(tr);
-                    return;
-                }
+                rowDefinitions.forEach(rowDef => {
+                    const tr = document.createElement('tr');
+                    if (rowDef.type === 'header') {
+                        tr.className = 'section-header-row';
+                        let colSpan = 1 + weeks.length * 7;
+                        tr.innerHTML = `<td colspan="${colSpan}" style="text-align:left; font-weight:bold; color:#00e5ff; letter-spacing: 1px;">${rowDef.name}</td>`;
+                        tbody.appendChild(tr);
+                        return;
+                    }
 
-                if (rowDef.type === 'summary' || rowDef.isFactoryTotal) {
-                    tr.className = 'summary-row';
-                } else {
-                    tr.className = 'data-row';
-                }
+                    if (rowDef.type === 'summary' || rowDef.isFactoryTotal) {
+                        tr.className = 'summary-row';
+                    } else {
+                        tr.className = 'data-row';
+                    }
 
-                let html = `<td class="line-name">${rowDef.name}</td>`;
+                    let html = `<td class="line-name sticky-col">${rowDef.name}</td>`;
 
-                weeks.forEach(week => {
-                    let weekTotalProd = 0;
-                    let weekTotalHours = 0;
+                    weeks.forEach(week => {
+                        let weekTotalProd = 0;
+                        let weekTotalHours = 0;
 
-                    week.days.forEach(dateStr => {
-                        let dayData = dbData[dateStr] || {};
-                        let valObj = getRowValueAndHours(rowDef, dayData);
-                        if (valObj.hours > 0) {
-                            html += `<td class="daily-col" style="background-color:${getColorClass(valObj.poh)};">${(valObj.poh * 100).toFixed(1)}%</td>`;
-                            weekTotalProd += valObj.poh * valObj.hours;
-                            weekTotalHours += valObj.hours;
-                        } else {
-                            html += `<td class="daily-col">-</td>`;
-                        }
+                        week.days.forEach(dateStr => {
+                            let dayData = dbData[dateStr] || {};
+                            let valObj = getRowValueAndHours(rowDef, dayData);
+                            if (valObj.hours > 0) {
+                                html += `<td class="daily-col ${getColorClass(valObj.poh)}">${(valObj.poh * 100).toFixed(1)}%</td>`;
+                                weekTotalProd += valObj.poh * valObj.hours;
+                                weekTotalHours += valObj.hours;
+                            } else {
+                                html += `<td class="daily-col val-normal">-</td>`;
+                            }
+                        });
+
+                        let weekAvgPoh = weekTotalHours > 0 ? (weekTotalProd / weekTotalHours) : NaN;
+                        let avgStr = !isNaN(weekAvgPoh) ? `${(weekAvgPoh * 100).toFixed(1)}%` : '-';
+                        html += `<td class="weekly-avg ${getColorClass(weekAvgPoh)}">${avgStr}</td>`;
                     });
 
-                    let weekAvgPoh = weekTotalHours > 0 ? (weekTotalProd / weekTotalHours) : NaN;
-                    let avgStr = !isNaN(weekAvgPoh) ? `${(weekAvgPoh * 100).toFixed(1)}%` : '-';
-                    html += `<td class="weekly-avg" style="background-color:${getColorClass(weekAvgPoh)};">${avgStr}</td>`;
+                    tr.innerHTML = html;
+                    tbody.appendChild(tr);
                 });
-
-                tr.innerHTML = html;
-                tbody.appendChild(tr);
-            });
+            } finally {
+                btn.innerText = "查询计算";
+            }
         }
 
         function getRowValueAndHours(rowDef, dayData) {
@@ -185,62 +196,31 @@
                 }
                 return { poh: NaN, hours: 0 };
             }
-
             if (rowDef.calc === 'stitchA') {
                 let p = 0, h = 0;
-                rowDefinitions.forEach(rd => {
-                    if (rd.inStitchA && dayData[rd.id]) {
-                        p += dayData[rd.id].poh * dayData[rd.id].hours;
-                        h += dayData[rd.id].hours;
-                    }
-                });
+                rowDefinitions.forEach(rd => { if (rd.inStitchA && dayData[rd.id]) { p += dayData[rd.id].poh * dayData[rd.id].hours; h += dayData[rd.id].hours; } });
                 return { poh: h > 0 ? p / h : NaN, hours: h };
             }
-
             if (rowDef.calc === 'stitchB') {
                 let p = 0, h = 0;
-                rowDefinitions.forEach(rd => {
-                    if (rd.inStitchB && dayData[rd.id]) {
-                        p += dayData[rd.id].poh * dayData[rd.id].hours;
-                        h += dayData[rd.id].hours;
-                    }
-                });
+                rowDefinitions.forEach(rd => { if (rd.inStitchB && dayData[rd.id]) { p += dayData[rd.id].poh * dayData[rd.id].hours; h += dayData[rd.id].hours; } });
                 return { poh: h > 0 ? p / h : NaN, hours: h };
             }
-
             if (rowDef.calc === 'stitchTotal') {
                 let p = 0, h = 0;
-                rowDefinitions.forEach(rd => {
-                    if ((rd.inStitchA || rd.inStitchB) && dayData[rd.id]) {
-                        p += dayData[rd.id].poh * dayData[rd.id].hours;
-                        h += dayData[rd.id].hours;
-                    }
-                });
+                rowDefinitions.forEach(rd => { if ((rd.inStitchA || rd.inStitchB) && dayData[rd.id]) { p += dayData[rd.id].poh * dayData[rd.id].hours; h += dayData[rd.id].hours; } });
                 return { poh: h > 0 ? p / h : NaN, hours: h };
             }
-
             if (rowDef.calc === 'mold') {
                 let p = 0, h = 0;
-                rowDefinitions.forEach(rd => {
-                    if (rd.inMold && dayData[rd.id]) {
-                        p += dayData[rd.id].poh * dayData[rd.id].hours;
-                        h += dayData[rd.id].hours;
-                    }
-                });
+                rowDefinitions.forEach(rd => { if (rd.inMold && dayData[rd.id]) { p += dayData[rd.id].poh * dayData[rd.id].hours; h += dayData[rd.id].hours; } });
                 return { poh: h > 0 ? p / h : NaN, hours: h };
             }
-
             if (rowDef.calc === 'factory' || rowDef.isFactoryTotal) {
                 let p = 0, h = 0;
-                rowDefinitions.forEach(rd => {
-                    if (rd.inFactory && rd.id && dayData[rd.id]) {
-                        p += dayData[rd.id].poh * dayData[rd.id].hours;
-                        h += dayData[rd.id].hours;
-                    }
-                });
+                rowDefinitions.forEach(rd => { if (rd.inFactory && rd.id && dayData[rd.id]) { p += dayData[rd.id].poh * dayData[rd.id].hours; h += dayData[rd.id].hours; } });
                 return { poh: h > 0 ? p / h : NaN, hours: h };
             }
-
             return { poh: NaN, hours: 0 };
         }
 
@@ -253,65 +233,92 @@
         }
     </script>
     <style>
-        body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; color: #2d3748; }
-        .login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1a365d; z-index: 9999; display: flex; align-items: center; justify-content: center; }
-        .login-box { background: white; padding: 40px; border-radius: 8px; text-align: center; width: 300px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-        .login-box input { width: 90%; padding: 12px; margin-bottom: 20px; border: 1px solid #ddd; border-radius: 4px; }
-        .login-box button { width: 100%; padding: 12px; background: #e53e3e; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight:bold;}
-        .login-box button:hover { background: #c53030; }
-
-        .dashboard { max-width: 1400px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); overflow-x: auto; }
-        .header-bar { border-bottom: 2px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 20px; }
-        h2 { color: #1a365d; margin: 0; text-align: center; }
+        /* 科技暗黑風核心設定 */
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0b0f19; margin: 0; padding: 20px; color: #94a3b8; }
         
-        .controls { background: #f8fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0; display: flex; justify-content: center; gap: 15px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
-        .controls input { padding: 6px; border: 1px solid #cbd5e0; border-radius: 4px; }
-        .controls button { padding: 8px 15px; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        /* 登入視窗暗黑化 */
+        .login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(11, 15, 25, 0.95); z-index: 9999; display: flex; align-items: center; justify-content: center; }
+        .login-box { background: #161b22; padding: 40px; border-radius: 12px; border: 1px solid #30363d; text-align: center; width: 300px; box-shadow: 0 0 30px rgba(0, 229, 255, 0.1); }
+        .login-box input { width: 90%; padding: 12px; margin-bottom: 20px; background: #0d1117; color: #fff; border: 1px solid #30363d; border-radius: 6px; outline: none; }
+        .login-box input:focus { border-color: #00e5ff; box-shadow: 0 0 8px rgba(0, 229, 255, 0.4); }
+        .login-box button { width: 100%; padding: 12px; background: linear-gradient(90deg, #00d2ff 0%, #3a7bd5 100%); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight:bold; letter-spacing: 2px;}
+        .login-box button:hover { opacity: 0.9; box-shadow: 0 0 15px rgba(0, 229, 255, 0.5); }
 
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; white-space: nowrap; }
-        th, td { border: 1px solid #cbd5e0; padding: 6px 8px; text-align: center; }
-        th { background-color: #1a365d; color: white; font-weight: 500; }
-        .week-group-header { background-color: #2b6cb0 !important; color: white; }
-        .weekly-avg { background-color: #feebc8; font-weight: bold; color: #744210; }
-        .summary-row { background-color: #edf2f7; font-weight: bold; color: #1a365d; }
-        .line-name { font-weight: 600; text-align: left; padding-left: 10px; background-color: #f7fafc; }
+        /* 看板主體 */
+        .dashboard { max-width: 1500px; margin: auto; background: #111827; padding: 30px; border-radius: 12px; border: 1px solid #1f2937; box-shadow: 0 10px 40px rgba(0,0,0,0.8); overflow-x: auto; }
+        .header-bar { border-bottom: 1px solid #334155; padding-bottom: 15px; margin-bottom: 20px; }
+        h2 { color: #00e5ff; margin: 0; text-align: left; font-size: 24px; text-shadow: 0 0 10px rgba(0, 229, 255, 0.3); display: flex; align-items: center; gap: 10px; }
+        h2::before { content: '🌐'; font-size: 28px; }
+        
+        /* 控制列 */
+        .controls { background: #1e293b; padding: 15px; border-radius: 8px; border: 1px solid #334155; display: flex; justify-content: flex-start; gap: 15px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+        .controls span { color: #e2e8f0; font-weight: bold; }
+        .controls input { background: #0f172a; color: #00e5ff; padding: 8px; border: 1px solid #334155; border-radius: 6px; outline: none; }
+        .controls input::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+        .btn-cyan { background: #0891b2; color: white; border: none; border-radius: 6px; padding: 8px 20px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .btn-cyan:hover { background: #0ea5e9; box-shadow: 0 0 10px rgba(14, 165, 233, 0.5); }
+        .btn-dark { background: #334155; color: white; border: none; border-radius: 6px; padding: 8px 20px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .btn-dark:hover { background: #475569; }
 
-        .bg-red { background-color: #ffcccc !important; color: #900; }
-        .bg-light-green { background-color: #cceeff !important; color: #036; }
-        .bg-green { background-color: #99ff99 !important; color: #060; }
+        /* 表格與格線設定 */
+        table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 10px; font-size: 14px; white-space: nowrap; }
+        th, td { border: 1px solid #1f2937; padding: 10px; text-align: center; }
+        
+        /* 表頭 */
+        th { background-color: #0f172a; color: #94a3b8; font-weight: 600; }
+        .week-group-header { background-color: #1e293b !important; color: #00e5ff; letter-spacing: 1px; border-bottom: 2px solid #00e5ff; }
+        .weekly-avg-header { background-color: #161b22; color: #e2e8f0; border-left: 2px solid #334155; }
+        
+        /* 列設定 */
+        .section-header-row td { background: #1e293b; border-top: 2px solid #334155; border-bottom: 2px solid #334155; }
+        .data-row td { background-color: #111827; }
+        .data-row:hover td { background-color: #1f2937; }
+        .summary-row td { background-color: #161b22; font-weight: bold; border-top: 1px solid #334155; border-bottom: 1px solid #334155; }
+        
+        /* 線別名稱與週平均的特殊底色 */
+        .line-name { text-align: left; padding-left: 15px; color: #e2e8f0; font-weight: bold; border-right: 2px solid #334155; }
+        .weekly-avg { background-color: #161b22 !important; border-left: 2px solid #334155; font-size: 1.1em; }
+
+        /* --- 核心：螢光數字變色 --- */
+        .val-red { color: #ff4d4f; font-weight: 800; text-shadow: 0 0 8px rgba(255, 77, 79, 0.4); }
+        .val-normal { color: #64748b; font-weight: 500; } /* 80~90: 低調暗灰 */
+        .val-light-green { color: #facc15; font-weight: 800; text-shadow: 0 0 8px rgba(250, 204, 21, 0.4); } /* 圖中99.8%是橘黃色，這裡用螢光黃/淺綠代替 */
+        .val-green { color: #00e676; font-weight: 900; text-shadow: 0 0 10px rgba(0, 230, 118, 0.5); font-size: 1.05em; }
+
+        /* 首列凍結 */
+        .sticky-col { position: sticky; left: 0; background-color: #0f172a !important; z-index: 2; box-shadow: 2px 0 5px rgba(0,0,0,0.5); }
     </style>
 </head>
 <body>
     <div id="login-overlay" class="login-overlay">
         <div class="login-box">
-            <h2 style="border:none; margin-bottom:10px; color:#1a365d;">系统登录</h2>
-            <p style="color:#718096; font-size:14px; margin-bottom:20px;">高管综合看板端</p>
-            <input type="password" id="pwd-input" placeholder="请输入管理密码">
-            <button onclick="checkPassword()">进入看板</button>
+            <h2 style="justify-content: center; margin-bottom:20px; font-size: 20px;">系统登录</h2>
+            <input type="password" id="pwd-input" placeholder="请输入管理密码 (支持Enter)">
+            <button onclick="checkPassword()">进入全厂看板</button>
         </div>
     </div>
 
     <div class="dashboard">
         <div class="header-bar">
-            <h2>📈 企业生产线多周综合看板</h2>
+            <h2>全局快照多周看板</h2>
         </div>
         <div class="controls">
-            <span>选择查询时间段：</span>
-            <input type="date" id="start-date"> 至 <input type="date" id="end-date">
-            <button onclick="loadDashboard()" style="background:#3182ce;">查询计算</button>
-            <button onclick="toggleDetails()" style="background:#718096;">隐藏/展开 每日明细</button>
+            <span>数据时间范围：</span>
+            <input type="date" id="start-date"> <span>至</span> <input type="date" id="end-date">
+            <button id="search-btn" class="btn-cyan" onclick="loadDashboard()">查询计算</button>
+            <button class="btn-dark" onclick="toggleDetails()">隐藏 / 展开每日明细</button>
         </div>
-        <div style="overflow-x: auto;">
+        <div>
             <table id="dashboard-table">
                 <thead>
                     <tr id="thead-tr-1">
-                        <th rowspan="2">线别 / 部门</th>
+                        <th rowspan="2" class="sticky-col">线别 / 部门</th>
                     </tr>
                     <tr id="thead-tr-2">
                     </tr>
                 </thead>
                 <tbody id="table-body">
-                    <tr><td colspan="10" style="text-align: center; color: #a0aec0; padding: 40px;">请选择起止日期并点击查询计算</td></tr>
+                    <tr><td colspan="10" style="text-align: center; color: #475569; padding: 60px; font-size: 16px;">请在上方设定起止日期，并点击查询获取数据快照</td></tr>
                 </tbody>
             </table>
         </div>
