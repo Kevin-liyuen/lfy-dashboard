@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>生产线数据录入终端</title>
-    <!-- 引入 Excel 解析库 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
@@ -160,13 +159,14 @@
             try {
                 btn.innerText = "数据上传中...";
                 btn.disabled = true;
-                await setDoc(doc(db, "production_data", dateStr), data);
+                // 添加 merge: true 以免覆寫未修改的同日資料
+                await setDoc(doc(db, "production_data", dateStr), data, { merge: true });
                 alert("✅ 数据同步至云端成功！");
             } catch (e) {
                 console.error(e);
                 alert("❌ 保存失败：" + e.message);
             } finally {
-                btn.innerText = "一键保存提交";
+                btn.innerText = "🚀 一键同步至云端";
                 btn.disabled = false;
             }
         }
@@ -174,7 +174,7 @@
         window.handleExcelUpload = function(event) {
             const file = event.target.files[0];
             if (!file) return;
-            if (!confirm("此操作将解析 Excel 历史数据并覆写云端，确定执行？")) return;
+            if (!confirm("此操作将解析 Excel 历史数据并补充至云端，确定执行？")) return;
 
             const reader = new FileReader();
             reader.onload = async (e) => {
@@ -201,17 +201,32 @@
                         const lineId = lineObj ? lineObj.id : lineName;
                         
                         for(let j = 1; j < dates.length; j++) {
-                            const dateRaw = dates[j];
-                            const poh = parseFloat(jsonPoh[i][j]);
-                            const hours = parseFloat(jsonHours[i][j]);
+                            let dateRaw = dates[j];
+                            let poh = parseFloat(jsonPoh[i][j]);
+                            let hours = parseFloat(jsonHours[i][j]);
                             
+                            // 自动纠正 POH > 2 的情况 (例如 102.1 变 1.021)
+                            if (!isNaN(poh) && poh > 2) {
+                                poh = poh / 100;
+                            }
+
                             if(!isNaN(poh) && !isNaN(hours) && dateRaw) {
                                 let finalDate = "";
                                 if (dateRaw instanceof Date) {
                                     let d = new Date(dateRaw.getTime() - dateRaw.getTimezoneOffset() * 60000);
                                     finalDate = d.toISOString().split('T')[0];
                                 } else {
-                                    finalDate = String(dateRaw).split(' ')[0].replace(/\//g, '-');
+                                    let parsedStr = String(dateRaw).split(' ')[0].replace(/\//g, '-');
+                                    let parts = parsedStr.split('-');
+                                    if(parts.length === 3) {
+                                        let month = parts[1].padStart(2, '0');
+                                        let day = parts[2].replace(/日/g, '').replace(/号/g, '').padStart(2, '0');
+                                        // 处理 "7月2日" 这种没有年份的情况，预设套用当前年份或自行指定
+                                        let year = parts[0].includes('月') ? new Date().getFullYear() : parts[0];
+                                        finalDate = `${year}-${month}-${day}`;
+                                    } else {
+                                        finalDate = parsedStr;
+                                    }
                                 }
                                 
                                 if(!firebaseData[finalDate]) firebaseData[finalDate] = {};
@@ -224,7 +239,8 @@
                     if (count === 0) throw new Error("未解析出有效数据。");
 
                     for(const [date, payload] of Object.entries(firebaseData)) {
-                        await setDoc(doc(db, "production_data", date), payload);
+                        // 使用 merge: true 防止覆蓋手動輸入的額外線別
+                        await setDoc(doc(db, "production_data", date), payload, { merge: true });
                     }
                     alert(`✅ 数据清洗完毕，成功导入 ${count} 天记录！`);
                     
@@ -239,9 +255,7 @@
         };
     </script>
     <style>
-        /* 科技暗黑風核心設定 */
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0b0f19; margin: 0; padding: 20px; color: #94a3b8; }
-        
         .login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(11, 15, 25, 0.95); z-index: 9999; display: flex; align-items: center; justify-content: center; }
         .login-box { background: #161b22; padding: 40px; border-radius: 12px; border: 1px solid #30363d; text-align: center; width: 300px; box-shadow: 0 0 30px rgba(0, 229, 255, 0.1); }
         .login-box input { width: 90%; padding: 12px; margin-bottom: 20px; background: #0d1117; color: #fff; border: 1px solid #30363d; border-radius: 6px; outline: none; }
