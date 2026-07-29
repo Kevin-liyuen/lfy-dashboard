@@ -45,7 +45,6 @@
             });
         };
 
-        // 步驟 1: 動態讀取架構設定
         async function initDashboardConfig() {
             try {
                 const docSnap = await getDoc(doc(db, "system_config", "layout"));
@@ -53,68 +52,35 @@
                     const config = docSnap.data();
                     rowDefinitions = [];
 
-                    // 1. 展開所有獨立線別
                     config.groups.forEach(group => {
                         group.lines.forEach(line => {
-                            rowDefinitions.push({
-                                type: 'line',
-                                name: line.name,
-                                id: line.id,
-                                groupName: group.name,
-                                inFactory: group.isFactoryTotal
-                            });
+                            rowDefinitions.push({ type: 'line', name: line.name, id: line.id, groupName: group.name, inFactory: group.isFactoryTotal });
                         });
                     });
 
-                    // 2. 加入間隔空白列
                     rowDefinitions.push({ type: 'spacer' });
 
-                    // 3. 自動生成各部門小計 (並記錄針車組的位置)
                     let stitchGroupsCount = 0;
                     let lastStitchIndex = -1;
 
                     config.groups.forEach(group => {
-                        rowDefinitions.push({
-                            type: 'summary',
-                            name: `${group.name}小计`,
-                            calc: 'group',
-                            groupName: group.name,
-                            isBottomSummary: !group.isFactoryTotal
-                        });
-                        
-                        // 偵測是否為針車組
+                        rowDefinitions.push({ type: 'summary', name: `${group.name}小计`, calc: 'group', groupName: group.name, isBottomSummary: !group.isFactoryTotal });
                         if (group.name.includes('针车')) {
                             stitchGroupsCount++;
                             lastStitchIndex = rowDefinitions.length - 1;
                         }
                     });
 
-                    // 3.5 插入【针车总综合】 (緊接在最後一個針車小計之後)
                     if (stitchGroupsCount > 0) {
-                        rowDefinitions.splice(lastStitchIndex + 1, 0, {
-                            type: 'summary',
-                            name: '针车总综合',
-                            calc: 'stitchTotal',
-                            isBottomSummary: false 
-                        });
+                        rowDefinitions.splice(lastStitchIndex + 1, 0, { type: 'summary', name: '针车总综合', calc: 'stitchTotal', isBottomSummary: false });
                     }
 
-                    // 4. 加入全廠綜合 (包含所有 inFactory = true 的線別)
-                    rowDefinitions.push({
-                        type: 'summary',
-                        name: '全厂综合%',
-                        calc: 'factory',
-                        isFactoryTotal: true
-                    });
-
-                    // 架構加載完畢，觸發日期預設與資料抓取
+                    rowDefinitions.push({ type: 'summary', name: '全厂综合%', calc: 'factory', isFactoryTotal: true });
                     setDefaultDatesAndLoad();
                 } else {
                     alert("⚠️ 尚未建立产线架构！请先前往 config.html 设定并保存架构。");
                 }
-            } catch (e) {
-                console.error(e);
-            }
+            } catch (e) { console.error(e); }
         }
 
         function setDefaultDatesAndLoad() {
@@ -128,41 +94,35 @@
             window.loadDashboard();
         }
 
-        // 新版顏色判定邏輯：精簡顏色、拔除 80~90 的刺眼色
+        // 顏色判定邏輯
         function getColorClass(val) {
             if (val === null || val === undefined || isNaN(val)) return 'val-normal';
             if (val < 0.8) return 'val-red';          
-            if (val >= 0.8 && val < 0.9) return 'val-normal';  // 80%~90% 原色
-            if (val >= 0.9 && val < 1.0) return 'val-light-green'; // >=90% 淺綠色
-            if (val >= 1.0) return 'val-green';       // >=100% 綠色
+            if (val >= 0.8 && val < 0.9) return 'val-normal'; 
+            if (val >= 0.9 && val < 1.0) return 'val-light-green'; 
+            if (val >= 1.0) return 'val-green';       
             return 'val-normal';                      
         }
 
-        // 動態計算公式
         function getRowValueAndHours(rowDef, dayData) {
             if (rowDef.type === 'line') {
-                if (dayData[rowDef.id]) {
-                    return { poh: dayData[rowDef.id].poh, hours: dayData[rowDef.id].hours };
-                }
+                if (dayData[rowDef.id]) return { poh: dayData[rowDef.id].poh, hours: dayData[rowDef.id].hours };
                 return { poh: NaN, hours: 0 };
             }
             if (rowDef.calc === 'group') {
                 let p = 0, h = 0;
                 rowDefinitions.forEach(rd => {
                     if (rd.type === 'line' && rd.groupName === rowDef.groupName && dayData[rd.id]) {
-                        p += dayData[rd.id].poh * dayData[rd.id].hours; 
-                        h += dayData[rd.id].hours;
+                        p += dayData[rd.id].poh * dayData[rd.id].hours; h += dayData[rd.id].hours;
                     }
                 });
                 return { poh: h > 0 ? p / h : NaN, hours: h };
             }
-            // 新增的針車加權總計公式
             if (rowDef.calc === 'stitchTotal') {
                 let p = 0, h = 0;
                 rowDefinitions.forEach(rd => {
                     if (rd.type === 'line' && rd.groupName && rd.groupName.includes('针车') && dayData[rd.id]) {
-                        p += dayData[rd.id].poh * dayData[rd.id].hours; 
-                        h += dayData[rd.id].hours;
+                        p += dayData[rd.id].poh * dayData[rd.id].hours; h += dayData[rd.id].hours;
                     }
                 });
                 return { poh: h > 0 ? p / h : NaN, hours: h };
@@ -171,8 +131,7 @@
                 let p = 0, h = 0;
                 rowDefinitions.forEach(rd => {
                     if (rd.type === 'line' && rd.inFactory && dayData[rd.id]) {
-                        p += dayData[rd.id].poh * dayData[rd.id].hours; 
-                        h += dayData[rd.id].hours;
+                        p += dayData[rd.id].poh * dayData[rd.id].hours; h += dayData[rd.id].hours;
                     }
                 });
                 return { poh: h > 0 ? p / h : NaN, hours: h };
@@ -300,6 +259,7 @@
         .login-box input { width: 90%; padding: 10px; margin-bottom: 15px; background: #0d1117; color: #fff; border: 1px solid #30363d; border-radius: 6px; outline: none; }
         .login-box input:focus { border-color: #00e5ff; box-shadow: 0 0 8px rgba(0, 229, 255, 0.4); }
         .login-box button { width: 100%; padding: 10px; background: linear-gradient(90deg, #00d2ff 0%, #3a7bd5 100%); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight:bold; letter-spacing: 1px;}
+        
         .dashboard { max-width: 98vw; margin: auto; background: #111827; padding: 10px 15px; border-radius: 8px; border: 1px solid #1f2937; box-shadow: 0 5px 20px rgba(0,0,0,0.8); overflow-x: auto; }
         .header-bar { border-bottom: 1px solid #334155; padding-bottom: 5px; margin-bottom: 10px; }
         h2 { color: #00e5ff; margin: 0; text-align: left; font-size: 18px; text-shadow: 0 0 10px rgba(0, 229, 255, 0.3); display: flex; align-items: center; gap: 8px; }
@@ -312,23 +272,33 @@
         .btn-cyan:hover { background: #0ea5e9; box-shadow: 0 0 8px rgba(14, 165, 233, 0.5); }
         .btn-dark { background: #334155; color: white; border: none; border-radius: 4px; padding: 5px 12px; cursor: pointer; font-weight: bold; transition: 0.3s; }
         .btn-dark:hover { background: #475569; }
+        
         table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 5px; white-space: nowrap; }
         th, td { border: 1px solid #1f2937; padding: 4px 6px; text-align: center; }
         th { background-color: #0f172a; color: #94a3b8; font-weight: 600; }
+        
         .week-group-header { background-color: #1e293b !important; color: #00e5ff; letter-spacing: 1px; border-bottom: 1px solid #00e5ff; }
-        .weekly-avg-header { background-color: #161b22; color: #e2e8f0; border-left: 2px solid #334155; }
+        
+        /* 【整週綜合】特殊視覺通道設計 */
+        .weekly-avg-header { background-color: #162032 !important; color: #00e5ff; border-left: 2px solid #00e5ff !important; border-right: 2px solid #00e5ff !important; font-weight: bold; }
+        .weekly-avg { background-color: #162032 !important; border-left: 2px solid #00e5ff !important; border-right: 2px solid #00e5ff !important; font-size: 1.05em; font-weight: bold; box-shadow: inset 0 0 10px rgba(0, 229, 255, 0.05); }
+
         .data-row td { background-color: #111827; }
         .data-row:hover td { background-color: #1f2937; }
+        
         .summary-row td { background-color: #1e293b; color: #94a3b8; font-weight: bold; border-top: 2px solid #334155; border-bottom: 2px solid #334155; font-size: 1.05em; }
         .factory-total-row td { background-color: #0f172a; color: #94a3b8; font-size: 1.1em; border-top: 3px double #00e5ff; }
         .line-name { text-align: left; padding-left: 10px; color: #e2e8f0 !important; font-weight: bold; border-right: 2px solid #334155; min-width: 100px; text-shadow: none !important; }
-        .weekly-avg { background-color: #161b22 !important; border-left: 2px solid #334155; font-size: 1.05em; }
-        
-        /* 加入 !important 強制覆蓋小計列的預設白色 */
+
+        /* 【顏色分級系統】 */
+        /* < 80%: 警告紅 */
         td.val-red { color: #ff4d4f !important; font-weight: 800; text-shadow: 0 0 6px rgba(255, 77, 79, 0.4); }
+        /* 80% ~ 89.9%: 原色灰 */
         td.val-normal { color: #94a3b8 !important; font-weight: 500; text-shadow: none; } 
-        td.val-light-green { color: #a3e635 !important; font-weight: 800; text-shadow: 0 0 6px rgba(163, 230, 53, 0.3); } 
-        td.val-green { color: #10b981 !important; font-weight: 900; text-shadow: 0 0 8px rgba(16, 185, 129, 0.4); font-size: 1.02em; }
+        /* 90% ~ 99.9%: 柔和標準綠 (不發光，代表達標) */
+        td.val-light-green { color: #4ade80 !important; font-weight: 700; text-shadow: none; } 
+        /* >= 100%: 亮螢光綠 (極致發光、稍微放大，代表完美超標) */
+        td.val-green { color: #00ff66 !important; font-weight: 900; text-shadow: 0 0 12px rgba(0, 255, 102, 0.8), 0 0 4px rgba(0, 255, 102, 0.5); font-size: 1.08em; letter-spacing: 0.5px;}
 
         .sticky-col { position: sticky; left: 0; background-color: #0f172a !important; z-index: 2; box-shadow: 2px 0 4px rgba(0,0,0,0.5); }
         .summary-row .sticky-col { background-color: #1e293b !important; }
