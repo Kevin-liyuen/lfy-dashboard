@@ -24,7 +24,7 @@
         
         let rowDefinitions = []; 
         window.currentFactory = localStorage.getItem('selected_factory') || 'lfy';
-        window.weeksData = []; // 紀錄所有週的資訊供動態折疊使用
+        window.weeksData = []; 
 
         window.checkPassword = function() {
             const pwd = document.getElementById('pwd-input').value;
@@ -203,7 +203,7 @@
                 theadTr1.innerHTML = '<th rowspan="2" class="sticky-col">线别 / 部门</th>';
                 theadTr2.innerHTML = '';
 
-                // ★ 渲染動態可點擊的週標題
+                // ★ 單週標題加入點擊事件
                 weeks.forEach((week, wIndex) => {
                     theadTr1.innerHTML += `<th colspan="7" class="week-group-header" id="week-header-${wIndex}" onclick="toggleWeek(${wIndex})" title="点击折叠/展开该周">🔽 ${week.title}</th>`;
                     ['周一', '周二', '周三', '周四', '周五', '周六'].forEach(dName => {
@@ -215,23 +215,16 @@
                 const tbody = document.getElementById('table-body');
                 tbody.innerHTML = '';
 
+                // ★ 自動隱藏空行邏輯
+                let renderedRows = [];
+
                 rowDefinitions.forEach(rowDef => {
-                    const tr = document.createElement('tr');
-                    
                     if (rowDef.type === 'spacer') {
-                        tr.innerHTML = `<td colspan="${1 + weeks.length * 7}" style="height: 30px; background-color: transparent; border: none;"></td>`;
-                        tbody.appendChild(tr);
+                        renderedRows.push({ type: 'spacer', hasData: true, html: `<td colspan="${1 + weeks.length * 7}" style="height: 30px; background-color: transparent; border: none;"></td>` });
                         return;
                     }
 
-                    if (rowDef.type === 'summary') {
-                        tr.className = 'summary-row';
-                        if (rowDef.isFactoryTotal) tr.classList.add('factory-total-row');
-                        if (rowDef.isBottomSummary) tr.classList.add('bottom-summary-row');
-                    } else {
-                        tr.className = 'data-row';
-                    }
-
+                    let hasData = false;
                     let html = `<td class="line-name sticky-col">${rowDef.name}</td>`;
 
                     weeks.forEach((week, wIndex) => {
@@ -242,6 +235,7 @@
                             let dayData = dbData[dateStr] || {};
                             let valObj = getRowValueAndHours(rowDef, dayData);
                             if (valObj.hours > 0) {
+                                hasData = true; // 只要這週有一天有資料，標記為 true
                                 html += `<td class="daily-col week-col-${wIndex} ${getColorClass(valObj.poh)}">${(valObj.poh * 100).toFixed(1)}%</td>`;
                                 weekTotalProd += valObj.poh * valObj.hours;
                                 weekTotalHours += valObj.hours;
@@ -255,9 +249,34 @@
                         html += `<td class="weekly-avg ${getColorClass(weekAvgPoh)}">${avgStr}</td>`;
                     });
 
-                    tr.innerHTML = html;
-                    tbody.appendChild(tr);
+                    // 如果整列都沒資料，直接跳過，不存入渲染陣列
+                    if (hasData) {
+                        let className = rowDef.type === 'summary' ? 'summary-row' : 'data-row';
+                        if (rowDef.isFactoryTotal) className += ' factory-total-row';
+                        if (rowDef.isBottomSummary) className += ' bottom-summary-row';
+                        renderedRows.push({ type: rowDef.type, hasData: true, className: className, html: html });
+                    }
                 });
+
+                // 清理多餘的 Spacer (避免連著兩個空白列)
+                for(let i = 0; i < renderedRows.length; i++) {
+                    if(renderedRows[i].type === 'spacer') {
+                        if (i === 0 || renderedRows[i-1].type === 'spacer' || i === renderedRows.length - 1) {
+                            renderedRows[i].hasData = false; 
+                        }
+                    }
+                }
+
+                // 正式渲染到畫面
+                renderedRows.forEach(r => {
+                    if (r.hasData) {
+                        const tr = document.createElement('tr');
+                        if(r.className) tr.className = r.className;
+                        tr.innerHTML = r.html;
+                        tbody.appendChild(tr);
+                    }
+                });
+
             } finally {
                 btn.innerText = "查询计算";
             }
@@ -277,7 +296,7 @@
             header.innerText = isHidden ? `🔽 ${titleText}` : `▶️ ${titleText}`;
         }
 
-        // ★ 全局折疊/展開邏輯
+        // ★ 全局一鍵折疊/展開邏輯
         window.toggleAllDetails = function() {
             if(!window.weeksData || window.weeksData.length === 0) return;
             
@@ -325,7 +344,6 @@
         th, td { border: 1px solid #1f2937; padding: 4px 6px; text-align: center; }
         th { background-color: #0f172a; color: #94a3b8; font-weight: 600; }
         
-        /* 標題游標變成手指，提示可點擊 */
         .week-group-header { background-color: #1e293b !important; color: #00e5ff; letter-spacing: 1px; border-bottom: 1px solid #00e5ff; cursor: pointer; user-select: none; transition: 0.2s;}
         .week-group-header:hover { background-color: #334155 !important; color: #fff;}
 
@@ -370,8 +388,7 @@
             <span>数据时间范围：</span>
             <input type="date" id="start-date"> <span>至</span> <input type="date" id="end-date">
             <button id="search-btn" class="btn-cyan" onclick="loadDashboard()">查询计算</button>
-            <!-- ★ 改用 toggleAllDetails 控制全局 -->
-            <button class="btn-dark" onclick="toggleAllDetails()">一键隐藏 / 展开每日明细</button>
+            <button class="btn-dark" onclick="toggleAllDetails()">一键隐藏 / 展开全部明细</button>
         </div>
         <div style="overflow-x: auto;">
             <table id="dashboard-table">
