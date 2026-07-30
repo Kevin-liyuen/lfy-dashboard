@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>全局生产线快照看板 (纯 RTDB 版)</title>
+    <!-- ★ 引入 html2canvas 截图引擎 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
@@ -203,7 +205,6 @@
                 theadTr1.innerHTML = '<th rowspan="2" class="sticky-col">线别 / 部门</th>';
                 theadTr2.innerHTML = '';
 
-                // ★ 單週標題加入點擊事件
                 weeks.forEach((week, wIndex) => {
                     theadTr1.innerHTML += `<th colspan="7" class="week-group-header" id="week-header-${wIndex}" onclick="toggleWeek(${wIndex})" title="点击折叠/展开该周">🔽 ${week.title}</th>`;
                     ['周一', '周二', '周三', '周四', '周五', '周六'].forEach(dName => {
@@ -215,7 +216,6 @@
                 const tbody = document.getElementById('table-body');
                 tbody.innerHTML = '';
 
-                // ★ 自動隱藏空行邏輯
                 let renderedRows = [];
 
                 rowDefinitions.forEach(rowDef => {
@@ -235,7 +235,7 @@
                             let dayData = dbData[dateStr] || {};
                             let valObj = getRowValueAndHours(rowDef, dayData);
                             if (valObj.hours > 0) {
-                                hasData = true; // 只要這週有一天有資料，標記為 true
+                                hasData = true; 
                                 html += `<td class="daily-col week-col-${wIndex} ${getColorClass(valObj.poh)}">${(valObj.poh * 100).toFixed(1)}%</td>`;
                                 weekTotalProd += valObj.poh * valObj.hours;
                                 weekTotalHours += valObj.hours;
@@ -249,7 +249,6 @@
                         html += `<td class="weekly-avg ${getColorClass(weekAvgPoh)}">${avgStr}</td>`;
                     });
 
-                    // 如果整列都沒資料，直接跳過，不存入渲染陣列
                     if (hasData) {
                         let className = rowDef.type === 'summary' ? 'summary-row' : 'data-row';
                         if (rowDef.isFactoryTotal) className += ' factory-total-row';
@@ -258,7 +257,6 @@
                     }
                 });
 
-                // 清理多餘的 Spacer (避免連著兩個空白列)
                 for(let i = 0; i < renderedRows.length; i++) {
                     if(renderedRows[i].type === 'spacer') {
                         if (i === 0 || renderedRows[i-1].type === 'spacer' || i === renderedRows.length - 1) {
@@ -267,7 +265,6 @@
                     }
                 }
 
-                // 正式渲染到畫面
                 renderedRows.forEach(r => {
                     if (r.hasData) {
                         const tr = document.createElement('tr');
@@ -282,7 +279,6 @@
             }
         }
 
-        // ★ 單週折疊/展開邏輯
         window.toggleWeek = function(wIndex) {
             const cols = document.querySelectorAll(`.week-col-${wIndex}`);
             const header = document.getElementById(`week-header-${wIndex}`);
@@ -296,7 +292,6 @@
             header.innerText = isHidden ? `🔽 ${titleText}` : `▶️ ${titleText}`;
         }
 
-        // ★ 全局一鍵折疊/展開邏輯
         window.toggleAllDetails = function() {
             if(!window.weeksData || window.weeksData.length === 0) return;
             
@@ -314,6 +309,53 @@
                 }
             }
         }
+
+        // ★ 一键截图分享功能
+        window.copyScreenshot = async function() {
+            const btn = document.getElementById('screenshot-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = "📸 处理截图中...";
+            
+            const dashboardElement = document.querySelector('.dashboard');
+            const wrapper = document.getElementById('table-wrapper');
+            
+            // 暫時解除寬度與捲動限制，確保完整截圖
+            const origDashWidth = dashboardElement.style.maxWidth;
+            const origWrapOverflow = wrapper.style.overflowX;
+            dashboardElement.style.maxWidth = 'none';
+            wrapper.style.overflowX = 'visible';
+
+            try {
+                const canvas = await html2canvas(dashboardElement, {
+                    backgroundColor: '#111827',
+                    scale: 1.5, // 提高清晰度
+                    logging: false
+                });
+                
+                canvas.toBlob(async function(blob) {
+                    try {
+                        const item = new ClipboardItem({ 'image/png': blob });
+                        await navigator.clipboard.write([item]);
+                        alert("✅ 看板截图已成功复制！\n👉 请直接打开微信、钉钉等聊天视窗，按 Ctrl+V 粘贴发送。");
+                    } catch (err) {
+                        console.error(err);
+                        // 若瀏覽器不支援剪貼簿寫入，改為自動下載圖片
+                        const link = document.createElement('a');
+                        link.download = `Dashboard_${window.currentFactory.toUpperCase()}_${new Date().toISOString().split('T')[0]}.png`;
+                        link.href = canvas.toDataURL('image/png');
+                        link.click();
+                        alert("⚠️ 您的浏览器安全设置不支持直接写入剪贴板。\n已为您自动下载截图文件，请查看下载资料夹！");
+                    }
+                });
+            } catch (e) {
+                alert("❌ 截图过程发生错误: " + e.message);
+            } finally {
+                // 恢復原版面設定
+                dashboardElement.style.maxWidth = origDashWidth;
+                wrapper.style.overflowX = origWrapOverflow;
+                btn.innerHTML = originalText;
+            }
+        }
     </script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0b0f19; margin: 0; padding: 5px; color: #94a3b8; font-size: 12px; }
@@ -323,7 +365,7 @@
         .login-box input:focus { border-color: #00e5ff; box-shadow: 0 0 8px rgba(0, 229, 255, 0.4); }
         .login-box button { width: 100%; padding: 10px; background: linear-gradient(90deg, #00d2ff 0%, #3a7bd5 100%); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight:bold; letter-spacing: 1px;}
         
-        .dashboard { max-width: 98vw; margin: auto; background: #111827; padding: 10px 15px; border-radius: 8px; border: 1px solid #1f2937; box-shadow: 0 5px 20px rgba(0,0,0,0.8); overflow-x: auto; }
+        .dashboard { max-width: 98vw; margin: auto; background: #111827; padding: 10px 15px; border-radius: 8px; border: 1px solid #1f2937; box-shadow: 0 5px 20px rgba(0,0,0,0.8); }
         .header-bar { border-bottom: 1px solid #334155; padding-bottom: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
         h2 { color: #00e5ff; margin: 0; text-align: left; font-size: 18px; text-shadow: 0 0 10px rgba(0, 229, 255, 0.3); display: flex; align-items: center; gap: 8px; }
         h2::before { content: '🌐'; font-size: 20px; }
@@ -331,7 +373,8 @@
         .factory-select { background: #1e293b; color: #facc15; border: 1px solid #facc15; padding: 6px 12px; border-radius: 4px; font-size: 14px; font-weight: bold; cursor: pointer; outline: none; box-shadow: 0 0 10px rgba(250, 204, 21, 0.2); }
         .factory-select option { background: #0f172a; color: #fff; }
 
-        .controls { background: #1e293b; padding: 8px 12px; border-radius: 6px; border: 1px solid #334155; display: flex; justify-content: flex-start; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+        .controls { background: #1e293b; padding: 8px 12px; border-radius: 6px; border: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+        .controls-left, .controls-right { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;}
         .controls span { color: #e2e8f0; font-weight: bold; }
         .controls input { background: #0f172a; color: #00e5ff; padding: 4px 6px; border: 1px solid #334155; border-radius: 4px; outline: none; font-size: 12px; }
         .controls input::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
@@ -339,6 +382,8 @@
         .btn-cyan:hover { background: #0ea5e9; box-shadow: 0 0 8px rgba(14, 165, 233, 0.5); }
         .btn-dark { background: #334155; color: white; border: none; border-radius: 4px; padding: 5px 12px; cursor: pointer; font-weight: bold; transition: 0.3s; }
         .btn-dark:hover { background: #475569; }
+        .btn-screenshot { background: linear-gradient(90deg, #8b5cf6, #6d28d9); border: 1px solid #a78bfa; color: white; border-radius: 4px; padding: 5px 15px; cursor: pointer; font-weight: bold; transition: 0.3s; box-shadow: 0 0 10px rgba(139, 92, 246, 0.3);}
+        .btn-screenshot:hover { filter: brightness(1.2); box-shadow: 0 0 15px rgba(139, 92, 246, 0.6); }
         
         table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 5px; white-space: nowrap; }
         th, td { border: 1px solid #1f2937; padding: 4px 6px; text-align: center; }
@@ -385,12 +430,18 @@
             </select>
         </div>
         <div class="controls">
-            <span>数据时间范围：</span>
-            <input type="date" id="start-date"> <span>至</span> <input type="date" id="end-date">
-            <button id="search-btn" class="btn-cyan" onclick="loadDashboard()">查询计算</button>
-            <button class="btn-dark" onclick="toggleAllDetails()">一键隐藏 / 展开全部明细</button>
+            <div class="controls-left">
+                <span>数据时间范围：</span>
+                <input type="date" id="start-date"> <span>至</span> <input type="date" id="end-date">
+                <button id="search-btn" class="btn-cyan" onclick="loadDashboard()">查询计算</button>
+                <button class="btn-dark" onclick="toggleAllDetails()">一键隐藏 / 展开全部明细</button>
+            </div>
+            <div class="controls-right">
+                <!-- ★ 一键截图按钮 -->
+                <button id="screenshot-btn" class="btn-screenshot" onclick="copyScreenshot()">📸 一键截图分享 (Cap Screen)</button>
+            </div>
         </div>
-        <div style="overflow-x: auto;">
+        <div id="table-wrapper" style="overflow-x: auto;">
             <table id="dashboard-table">
                 <thead>
                     <tr id="thead-tr-1"><th rowspan="2" class="sticky-col">线别 / 部门</th></tr>
