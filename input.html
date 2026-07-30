@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>生产线数据录入终端 (纯 RTDB 版)</title>
+    <title>生产线数据录入终端 (双厂智能版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
@@ -22,7 +22,7 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app); 
         const ACCESS_PASSWORD = "888888"; 
-        const UPLOAD_PASSWORD = "999999"; // ★ 高级导入密码
+        const UPLOAD_PASSWORD = "999999"; 
         
         window.lines = []; 
         window.currentFactory = localStorage.getItem('selected_factory') || 'lfy';
@@ -62,7 +62,7 @@
 
             document.addEventListener('paste', handlePaste);
 
-            // ★ 方向鍵導航邏輯 (Input 專用)
+            // 方向鍵導航邏輯
             document.addEventListener('keydown', function(e) {
                 if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
                 const active = document.activeElement;
@@ -80,10 +80,10 @@
 
                 if (e.key === 'ArrowUp' && rowIndex > 0) {
                     targetInput = allRows[rowIndex - 1].querySelectorAll('.input-box')[colIndex];
-                    e.preventDefault(); // 阻止頁面滾動
+                    e.preventDefault(); 
                 } else if (e.key === 'ArrowDown' && rowIndex < allRows.length - 1) {
                     targetInput = allRows[rowIndex + 1].querySelectorAll('.input-box')[colIndex];
-                    e.preventDefault(); // 阻止頁面滾動
+                    e.preventDefault(); 
                 } else if (e.key === 'ArrowLeft' && active.selectionStart === 0) {
                     if (colIndex > 0) targetInput = inputsInRow[colIndex - 1];
                 } else if (e.key === 'ArrowRight' && active.selectionEnd === active.value.length) {
@@ -92,7 +92,7 @@
 
                 if (targetInput) {
                     targetInput.focus();
-                    targetInput.select(); // 自動全選，方便直接輸入覆蓋
+                    targetInput.select(); 
                 }
             });
         };
@@ -229,7 +229,6 @@
             }
         }
 
-        // ★ 导入功能增加密碼鎖
         window.handleExcelUpload = function(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -265,11 +264,24 @@
                     const firebaseData = {};
                     
                     for(let i = 1; i < jsonPoh.length; i++) {
-                        const lineName = jsonPoh[i][0];
-                        if(!lineName) continue;
+                        const rawLineName = jsonPoh[i][0];
+                        if(!rawLineName) continue;
                         
-                        const lineObj = window.lines.find(l => l.name === lineName);
-                        const lineId = lineObj ? lineObj.id : lineName; 
+                        // ★ 智能模糊配對引擎：解決 "针车A1" 與 "针车1" 對不上的問題
+                        const excelName = String(rawLineName).replace(/\s+/g, ''); // 去除空白
+                        const lineObj = window.lines.find(l => {
+                            const configName = String(l.name).replace(/\s+/g, '');
+                            if (configName === excelName) return true;
+                            // 忽略针车後面的 A, B, C (例如针车A1 -> 针车1)
+                            if (excelName.replace(/针车[A-Za-z]/, '针车') === configName) return true;
+                            if (excelName === configName.replace(/针车[A-Za-z]/, '针车')) return true;
+                            // 解決 针车A-销样组 vs 针车-销样组
+                            if (excelName.replace(/[A-Za-z]-/, '-') === configName) return true;
+                            if (excelName === configName.replace(/[A-Za-z]-/, '-')) return true;
+                            return false;
+                        });
+                        
+                        const lineId = lineObj ? lineObj.id : rawLineName; 
                         
                         for(let j = 1; j < dates.length; j++) {
                             let dateRaw = dates[j];
@@ -334,8 +346,8 @@
         .factory-select { background: #1e293b; color: #facc15; border: 1px solid #facc15; padding: 8px 15px; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer; outline: none; box-shadow: 0 0 10px rgba(250, 204, 21, 0.2); }
         .factory-select option { background: #0f172a; color: #fff; }
 
-        .upload-btn { background: #1e293b; color: #00e5ff; border: 1px solid #00e5ff; padding: 8px 15px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; transition: 0.3s; display: flex; align-items: center;}
-        .upload-btn:hover { background: #00e5ff; color: #0b0f19; box-shadow: 0 0 10px rgba(0, 229, 255, 0.5); }
+        .upload-btn { background: #1e293b; color: #facc15; border: 1px dashed #facc15; padding: 8px 15px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: bold; transition: 0.3s; display: flex; align-items: center;}
+        .upload-btn:hover { background: #facc15; color: #0b0f19; box-shadow: 0 0 10px rgba(250, 204, 21, 0.5); }
         input[type="file"] { display: none; }
         
         .date-section { text-align: center; margin-bottom: 20px; font-size: 16px; background: #161b22; padding: 15px; border-radius: 8px; border: 1px solid #334155;}
@@ -385,7 +397,7 @@
         </div>
         
         <div class="info-box">
-            ✨ <b>快捷键提示：</b> 选中输入框后，可使用键盘的 <b>上 下 左 右 键 (↑ ↓ ← →)</b> 快速切换至相近格子，手感同 Excel。
+            ✨ <b>快捷键提示：</b> 选中输入框后，可使用键盘的 <b>上 下 左 右 键 (↑ ↓ ← →)</b> 快速切换至相邻格子，手感同 Excel。
         </div>
 
         <div class="date-section">
