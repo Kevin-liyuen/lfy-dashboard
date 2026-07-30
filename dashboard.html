@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>全局生产线快照看板 (纯 RTDB 版)</title>
-    <!-- ★ 引入 html2canvas 截图引擎 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
@@ -89,7 +88,8 @@
                         }
                     });
 
-                    if (stitchGroupsCount > 0) {
+                    // ★ 修正邏輯：只有當「針車分組大於 1 組」時，才顯示「针车总综合」
+                    if (stitchGroupsCount > 1) {
                         rowDefinitions.splice(lastStitchIndex + 1, 0, { type: 'summary', name: '针车总综合', calc: 'stitchTotal', isBottomSummary: false });
                     }
 
@@ -310,26 +310,33 @@
             }
         }
 
-        // ★ 一键截图分享功能
+        // ★ 修正版：支援超寬表格的完美截圖
         window.copyScreenshot = async function() {
             const btn = document.getElementById('screenshot-btn');
             const originalText = btn.innerHTML;
-            btn.innerHTML = "📸 处理截图中...";
+            btn.innerHTML = "📸 处理截图中, 请稍候...";
             
-            const dashboardElement = document.querySelector('.dashboard');
             const wrapper = document.getElementById('table-wrapper');
+            const table = document.getElementById('dashboard-table');
             
-            // 暫時解除寬度與捲動限制，確保完整截圖
-            const origDashWidth = dashboardElement.style.maxWidth;
-            const origWrapOverflow = wrapper.style.overflowX;
-            dashboardElement.style.maxWidth = 'none';
+            // 備份原本的樣式
+            const origOverflow = wrapper.style.overflowX;
+            const origWidth = wrapper.style.width;
+            
+            // 強制展開讓 html2canvas 可以讀取完整寬度
             wrapper.style.overflowX = 'visible';
+            wrapper.style.width = table.scrollWidth + 'px'; 
 
             try {
-                const canvas = await html2canvas(dashboardElement, {
+                // 等待瀏覽器渲染 DOM 更新
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                const canvas = await html2canvas(wrapper, {
                     backgroundColor: '#111827',
-                    scale: 1.5, // 提高清晰度
-                    logging: false
+                    scale: 1.5, // 提高解析度
+                    logging: false,
+                    width: table.scrollWidth,
+                    windowWidth: table.scrollWidth // 告訴虛擬視窗這表格有多寬
                 });
                 
                 canvas.toBlob(async function(blob) {
@@ -339,7 +346,6 @@
                         alert("✅ 看板截图已成功复制！\n👉 请直接打开微信、钉钉等聊天视窗，按 Ctrl+V 粘贴发送。");
                     } catch (err) {
                         console.error(err);
-                        // 若瀏覽器不支援剪貼簿寫入，改為自動下載圖片
                         const link = document.createElement('a');
                         link.download = `Dashboard_${window.currentFactory.toUpperCase()}_${new Date().toISOString().split('T')[0]}.png`;
                         link.href = canvas.toDataURL('image/png');
@@ -350,9 +356,9 @@
             } catch (e) {
                 alert("❌ 截图过程发生错误: " + e.message);
             } finally {
-                // 恢復原版面設定
-                dashboardElement.style.maxWidth = origDashWidth;
-                wrapper.style.overflowX = origWrapOverflow;
+                // 截圖結束後瞬間復原版面，使用者不會察覺
+                wrapper.style.overflowX = origOverflow;
+                wrapper.style.width = origWidth;
                 btn.innerHTML = originalText;
             }
         }
@@ -437,10 +443,10 @@
                 <button class="btn-dark" onclick="toggleAllDetails()">一键隐藏 / 展开全部明细</button>
             </div>
             <div class="controls-right">
-                <!-- ★ 一键截图按钮 -->
                 <button id="screenshot-btn" class="btn-screenshot" onclick="copyScreenshot()">📸 一键截图分享 (Cap Screen)</button>
             </div>
         </div>
+        <!-- ★ 包裹表格的容器 -->
         <div id="table-wrapper" style="overflow-x: auto;">
             <table id="dashboard-table">
                 <thead>
