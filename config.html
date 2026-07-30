@@ -22,7 +22,7 @@
         const app = initializeApp(firebaseConfig);
         const dbRTDB = getDatabase(app);
         const ACCESS_PASSWORD = "888888"; 
-        const UPLOAD_PASSWORD = "999999"; // ★ 高级导入密码
+        const UPLOAD_PASSWORD = "999999"; 
         
         window.systemConfig = { groups: [] };
         window.currentFactory = localStorage.getItem('selected_factory') || 'lfy';
@@ -49,7 +49,6 @@
                 if (e.key === 'Enter') window.checkPassword();
             });
 
-            // ★ 方向鍵導航邏輯 (Config 專用)
             document.addEventListener('keydown', function(e) {
                 if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
                 const active = document.activeElement;
@@ -86,7 +85,6 @@
                 if (snapshot.exists()) {
                     window.systemConfig = snapshot.val();
                 } else {
-                    // 若無資料，給予空白模板
                     window.systemConfig = { groups: [] };
                 }
                 renderUI();
@@ -107,11 +105,14 @@
                 const groupDiv = document.createElement('div');
                 groupDiv.className = 'group-card';
                 
+                // ★ 加入了 ⬆️ 和 ⬇️ 按鈕
                 let linesHtml = group.lines.map((line, lIndex) => `
                     <div class="line-item">
+                        <button class="btn-icon" onclick="moveLineUp(${gIndex}, ${lIndex})" title="上移">⬆️</button>
+                        <button class="btn-icon" onclick="moveLineDown(${gIndex}, ${lIndex})" title="下移">⬇️</button>
                         <input type="text" class="input-line-name nav-input" value="${line.name}" onchange="updateLine(${gIndex}, ${lIndex}, 'name', this.value)" placeholder="线别名称 (例: 针车C1)">
                         <input type="text" class="input-line-id nav-input" value="${line.id}" onchange="updateLine(${gIndex}, ${lIndex}, 'id', this.value)" placeholder="资料库ID (极重要)">
-                        <button class="btn-del-line" onclick="removeLine(${gIndex}, ${lIndex})">🗑️</button>
+                        <button class="btn-del-line" onclick="removeLine(${gIndex}, ${lIndex})" title="删除">🗑️</button>
                     </div>
                 `).join('');
 
@@ -133,6 +134,20 @@
                 `;
                 container.appendChild(groupDiv);
             });
+        }
+
+        // ★ 新增的上下移動邏輯
+        window.moveLineUp = (gIndex, lIndex) => {
+            if (lIndex === 0) return;
+            const lines = window.systemConfig.groups[gIndex].lines;
+            [lines[lIndex], lines[lIndex - 1]] = [lines[lIndex - 1], lines[lIndex]];
+            renderUI();
+        }
+        window.moveLineDown = (gIndex, lIndex) => {
+            const lines = window.systemConfig.groups[gIndex].lines;
+            if (lIndex === lines.length - 1) return;
+            [lines[lIndex], lines[lIndex + 1]] = [lines[lIndex + 1], lines[lIndex]];
+            renderUI();
         }
 
         window.updateGroup = (gIndex, field, value) => { window.systemConfig.groups[gIndex][field] = value; }
@@ -162,7 +177,6 @@
             }
         }
 
-        // ★ 新增的架构 Excel 导入功能
         window.handleConfigExcelUpload = function(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -191,7 +205,7 @@
 
                     let groupsMap = new Map();
                     rows.forEach((row, idx) => {
-                        if(idx === 0 && row[0] && String(row[0]).includes('部门')) return; // 略過標題行
+                        if(idx === 0 && row[0] && String(row[0]).includes('部门')) return;
                         const gName = row[0];
                         const isTotalStr = row[1];
                         const lName = row[2];
@@ -261,6 +275,9 @@
         .input-line-id { background: #1e293b; color: #facc15; border: 1px solid #475569; padding: 6px; width: 45%; border-radius: 4px; outline:none; font-family: monospace;}
         .input-line-name:focus, .input-line-id:focus { border-color: #00e5ff; box-shadow: 0 0 5px rgba(0,229,255,0.3);}
         
+        /* 排序按鈕樣式 */
+        .btn-icon { background: transparent; border: none; cursor: pointer; font-size: 14px; opacity: 0.6; padding: 0 2px; }
+        .btn-icon:hover { opacity: 1; transform: scale(1.1); }
         .btn-del-line { background: transparent; border: none; cursor: pointer; font-size: 16px; opacity: 0.7; }
         .btn-del-line:hover { opacity: 1; }
         
