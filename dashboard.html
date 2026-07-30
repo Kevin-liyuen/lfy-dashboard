@@ -88,7 +88,6 @@
                         }
                     });
 
-                    // ★ 修正邏輯：只有當「針車分組大於 1 組」時，才顯示「针车总综合」
                     if (stitchGroupsCount > 1) {
                         rowDefinitions.splice(lastStitchIndex + 1, 0, { type: 'summary', name: '针车总综合', calc: 'stitchTotal', isBottomSummary: false });
                     }
@@ -310,7 +309,22 @@
             }
         }
 
-        // ★ 修正版：支援超寬表格的完美截圖
+        // 輔助函數：控制指定週的展開/隱藏
+        function setWeekState(wIndex, expand) {
+            const cols = document.querySelectorAll(`.week-col-${wIndex}`);
+            const header = document.getElementById(`week-header-${wIndex}`);
+            if (!cols || cols.length === 0 || !header) return;
+            
+            const isHidden = cols[0].style.display === 'none';
+            if ((expand && isHidden) || (!expand && !isHidden)) {
+                cols.forEach(col => { col.style.display = expand ? 'table-cell' : 'none'; });
+                header.colSpan = expand ? 7 : 1;
+                const titleText = header.innerText.replace('🔽 ', '').replace('▶️ ', '');
+                header.innerText = expand ? `🔽 ${titleText}` : `▶️ ${titleText}`;
+            }
+        }
+
+        // ★ 全新智慧截圖功能：永遠只展開最新兩週
         window.copyScreenshot = async function() {
             const btn = document.getElementById('screenshot-btn');
             const originalText = btn.innerHTML;
@@ -318,6 +332,20 @@
             
             const wrapper = document.getElementById('table-wrapper');
             const table = document.getElementById('dashboard-table');
+            const totalWeeks = window.weeksData ? window.weeksData.length : 0;
+            
+            // 1. 紀錄當下的折疊狀態，以便截圖後還原
+            const originalStates = [];
+            for (let i = 0; i < totalWeeks; i++) {
+                const header = document.getElementById(`week-header-${i}`);
+                originalStates.push(header && header.colSpan === 7);
+            }
+
+            // 2. 智慧排版：最後兩週展開，其餘隱藏
+            for (let i = 0; i < totalWeeks; i++) {
+                const shouldExpand = i >= totalWeeks - 2;
+                setWeekState(i, shouldExpand);
+            }
             
             // 備份原本的樣式
             const origOverflow = wrapper.style.overflowX;
@@ -328,22 +356,22 @@
             wrapper.style.width = table.scrollWidth + 'px'; 
 
             try {
-                // 等待瀏覽器渲染 DOM 更新
-                await new Promise(resolve => setTimeout(resolve, 100));
+                // 等待瀏覽器渲染 DOM 更新完成 (稍微加長確保重排完畢)
+                await new Promise(resolve => setTimeout(resolve, 300));
 
                 const canvas = await html2canvas(wrapper, {
                     backgroundColor: '#111827',
-                    scale: 1.5, // 提高解析度
+                    scale: 1.5, 
                     logging: false,
                     width: table.scrollWidth,
-                    windowWidth: table.scrollWidth // 告訴虛擬視窗這表格有多寬
+                    windowWidth: table.scrollWidth 
                 });
                 
                 canvas.toBlob(async function(blob) {
                     try {
                         const item = new ClipboardItem({ 'image/png': blob });
                         await navigator.clipboard.write([item]);
-                        alert("✅ 看板截图已成功复制！\n👉 请直接打开微信、钉钉等聊天视窗，按 Ctrl+V 粘贴发送。");
+                        alert("✅ 看板截图已成功复制！\n👉 截图中已自动为您呈现「最新两周明细 + 历史综合」，请直接打开聊天视窗粘贴发送。");
                     } catch (err) {
                         console.error(err);
                         const link = document.createElement('a');
@@ -356,9 +384,12 @@
             } catch (e) {
                 alert("❌ 截图过程发生错误: " + e.message);
             } finally {
-                // 截圖結束後瞬間復原版面，使用者不會察覺
+                // 3. 瞬間復原使用者的原始排版與狀態
                 wrapper.style.overflowX = origOverflow;
                 wrapper.style.width = origWidth;
+                for (let i = 0; i < totalWeeks; i++) {
+                    setWeekState(i, originalStates[i]);
+                }
                 btn.innerHTML = originalText;
             }
         }
@@ -446,7 +477,6 @@
                 <button id="screenshot-btn" class="btn-screenshot" onclick="copyScreenshot()">📸 一键截图分享 (Cap Screen)</button>
             </div>
         </div>
-        <!-- ★ 包裹表格的容器 -->
         <div id="table-wrapper" style="overflow-x: auto;">
             <table id="dashboard-table">
                 <thead>
