@@ -3,11 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>生产线数据录入终端 (双厂版)</title>
+    <title>生产线数据录入终端 (纯 RTDB 版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        // ★ 核心改動：替換為 Realtime Database SDK (包含 update 語法做 merge)
         import { getDatabase, ref, get, update } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 
         const firebaseConfig = {
@@ -23,6 +22,7 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app); 
         const ACCESS_PASSWORD = "888888"; 
+        const UPLOAD_PASSWORD = "999999"; // ★ 高级导入密码
         
         window.lines = []; 
         window.currentFactory = localStorage.getItem('selected_factory') || 'lfy';
@@ -61,6 +61,40 @@
             });
 
             document.addEventListener('paste', handlePaste);
+
+            // ★ 方向鍵導航邏輯 (Input 專用)
+            document.addEventListener('keydown', function(e) {
+                if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+                const active = document.activeElement;
+                if (!active || active.tagName !== 'INPUT' || !active.classList.contains('input-box')) return;
+
+                const currentTr = active.closest('tr');
+                if(!currentTr) return;
+
+                const allRows = Array.from(document.querySelectorAll('#table-body tr.data-row'));
+                const rowIndex = allRows.indexOf(currentTr);
+                const inputsInRow = Array.from(currentTr.querySelectorAll('.input-box'));
+                const colIndex = inputsInRow.indexOf(active);
+
+                let targetInput = null;
+
+                if (e.key === 'ArrowUp' && rowIndex > 0) {
+                    targetInput = allRows[rowIndex - 1].querySelectorAll('.input-box')[colIndex];
+                    e.preventDefault(); // 阻止頁面滾動
+                } else if (e.key === 'ArrowDown' && rowIndex < allRows.length - 1) {
+                    targetInput = allRows[rowIndex + 1].querySelectorAll('.input-box')[colIndex];
+                    e.preventDefault(); // 阻止頁面滾動
+                } else if (e.key === 'ArrowLeft' && active.selectionStart === 0) {
+                    if (colIndex > 0) targetInput = inputsInRow[colIndex - 1];
+                } else if (e.key === 'ArrowRight' && active.selectionEnd === active.value.length) {
+                    if (colIndex < inputsInRow.length - 1) targetInput = inputsInRow[colIndex + 1];
+                }
+
+                if (targetInput) {
+                    targetInput.focus();
+                    targetInput.select(); // 自動全選，方便直接輸入覆蓋
+                }
+            });
         };
 
         window.switchFactory = function() {
@@ -186,7 +220,6 @@
                 btn.innerText = "数据上传中...";
                 btn.disabled = true;
                 const collectionName = window.currentFactory === 'lfy' ? "production_data" : "ly_production_data";
-                // ★ 核心改動：使用 update 來達成 merge: true 的效果
                 await update(ref(db, collectionName + '/' + dateStr), data);
                 alert(`✅ ${window.currentFactory.toUpperCase()} 厂数据同步至云端成功！`);
             } catch (e) { alert("❌ 保存失败：" + e.message); } 
@@ -196,11 +229,20 @@
             }
         }
 
+        // ★ 导入功能增加密碼鎖
         window.handleExcelUpload = function(event) {
             const file = event.target.files[0];
             if (!file) return;
+
+            const pwd = prompt("⚠️ 危险操作！请输入批量导入密码以执行数据覆盖：");
+            if (pwd !== UPLOAD_PASSWORD) {
+                alert("密码错误，导入取消！");
+                event.target.value = '';
+                return;
+            }
+
             const factoryUpper = window.currentFactory.toUpperCase();
-            if (!confirm(`此操作将解析 Excel 数据并补充至【${factoryUpper} 厂】云端，确定执行？`)) {
+            if (!confirm(`此操作将解析 Excel 数据并大批量补充至【${factoryUpper} 厂】云端，确定执行？`)) {
                 event.target.value = '';
                 return;
             }
@@ -265,7 +307,6 @@
 
                     const collectionName = window.currentFactory === 'lfy' ? "production_data" : "ly_production_data";
                     for(const [date, payload] of Object.entries(firebaseData)) {
-                        // ★ 核心改動：Excel 匯入的 merge 也改用 update
                         await update(ref(db, collectionName + '/' + date), payload);
                     }
                     alert(`✅ ${factoryUpper} 厂数据清洗完毕，成功导入 ${count} 天记录！`);
@@ -287,7 +328,7 @@
         .login-box button { width: 100%; padding: 12px; background: linear-gradient(90deg, #00d2ff 0%, #3a7bd5 100%); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight:bold; letter-spacing: 2px;}
         
         .container { max-width: 800px; margin: auto; background: #111827; padding: 30px; border-radius: 12px; border: 1px solid #1f2937; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
-        .header-bar { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 15px; margin-bottom: 25px; flex-wrap: wrap; gap: 10px;}
+        .header-bar { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 15px; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;}
         h2 { color: #00e5ff; margin: 0; font-size: 22px; text-shadow: 0 0 10px rgba(0, 229, 255, 0.3); }
         
         .factory-select { background: #1e293b; color: #facc15; border: 1px solid #facc15; padding: 8px 15px; border-radius: 6px; font-size: 15px; font-weight: bold; cursor: pointer; outline: none; box-shadow: 0 0 10px rgba(250, 204, 21, 0.2); }
@@ -302,6 +343,8 @@
         .date-section input { padding: 8px 15px; background: #0f172a; color: #00e5ff; font-size: 16px; border: 1px solid #334155; border-radius: 4px; outline: none; }
         .date-section input::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
         
+        .info-box { background: rgba(0, 229, 255, 0.1); border-left: 4px solid #00e5ff; padding: 10px 15px; margin-bottom: 20px; font-size: 13px; line-height: 1.5; color: #cbd5e1; }
+
         table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
         th, td { padding: 12px; text-align: center; border: 1px solid #1f2937; }
         th { background-color: #0f172a; color: #94a3b8; font-weight: 600; }
@@ -336,10 +379,15 @@
             </select>
             <label class="upload-btn" id="upload-btn-label">
                 <svg style="width:16px; margin-right:5px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-                批量导入当前厂历史 Excel
+                批量导入历史 Excel
                 <input type="file" accept=".xlsx, .xls" onchange="handleExcelUpload(event)">
             </label>
         </div>
+        
+        <div class="info-box">
+            ✨ <b>快捷键提示：</b> 选中输入框后，可使用键盘的 <b>上 下 左 右 键 (↑ ↓ ← →)</b> 快速切换至相近格子，手感同 Excel。
+        </div>
+
         <div class="date-section">
             <label for="date-picker">设定数据归属日期：</label>
             <input type="date" id="date-picker">
