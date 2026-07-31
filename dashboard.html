@@ -3,11 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>全局生产线快照看板 (纯 RTDB 版)</title>
+    <title>全局生产线快照看板 (纯 RTDB 安全加强版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+        // ★ 引入 Firebase Auth 用於安全驗證
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
         const firebaseConfig = {
           apiKey: "AIzaSyAMckSKafxLho2CR5PVe8KLJ6dYAEIJiZI",
@@ -21,19 +23,28 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app); 
+        const auth = getAuth(app); // 初始化 Auth
         const ACCESS_PASSWORD = "888888"; 
         
         let rowDefinitions = []; 
         window.currentFactory = localStorage.getItem('selected_factory') || 'lfy';
         window.weeksData = []; 
 
-        window.checkPassword = function() {
+        window.checkPassword = async function() {
             const pwd = document.getElementById('pwd-input').value;
             if (pwd === ACCESS_PASSWORD) {
                 document.getElementById('login-overlay').style.display = 'none';
                 sessionStorage.setItem('lfy_auth_dash', 'true');
                 document.getElementById('factory-select').value = window.currentFactory;
-                initDashboardConfig(); 
+                
+                // ★ 密碼正確後，向 Firebase 申請匿名通行證
+                try {
+                    await signInAnonymously(auth);
+                    initDashboardConfig(); 
+                } catch (error) {
+                    console.error("Auth Error:", error);
+                    alert("安全验证失败，请检查网络或联系管理员。");
+                }
             } else {
                 alert("密码错误！");
             }
@@ -43,7 +54,15 @@
             if (sessionStorage.getItem('lfy_auth_dash') === 'true') {
                 document.getElementById('login-overlay').style.display = 'none';
                 document.getElementById('factory-select').value = window.currentFactory;
-                initDashboardConfig(); 
+                
+                // ★ 檢查是否已有通行證，若無則重新申請
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        initDashboardConfig();
+                    } else {
+                        signInAnonymously(auth).then(() => initDashboardConfig()).catch(e => console.error(e));
+                    }
+                });
             }
             document.getElementById('pwd-input').addEventListener('keypress', function (e) {
                 if (e.key === 'Enter') window.checkPassword();
@@ -273,6 +292,9 @@
                     }
                 });
 
+                // ★ 資料載入完畢後，預設只展開最後兩週
+                applySmartExpansion();
+
             } finally {
                 btn.innerText = "查询计算";
             }
@@ -291,24 +313,6 @@
             header.innerText = isHidden ? `🔽 ${titleText}` : `▶️ ${titleText}`;
         }
 
-        window.toggleAllDetails = function() {
-            if(!window.weeksData || window.weeksData.length === 0) return;
-            
-            const firstCol = document.querySelector('.daily-col');
-            const isHidden = firstCol && firstCol.style.display === 'none';
-            
-            for(let i=0; i<window.weeksData.length; i++) {
-                const cols = document.querySelectorAll(`.week-col-${i}`);
-                const header = document.getElementById(`week-header-${i}`);
-                if(cols.length > 0) {
-                    cols.forEach(col => { col.style.display = isHidden ? 'table-cell' : 'none'; });
-                    header.colSpan = isHidden ? 7 : 1;
-                    const titleText = header.innerText.replace('🔽 ', '').replace('▶️ ', '');
-                    header.innerText = isHidden ? `🔽 ${titleText}` : `▶️ ${titleText}`;
-                }
-            }
-        }
-
         // 輔助函數：控制指定週的展開/隱藏
         function setWeekState(wIndex, expand) {
             const cols = document.querySelectorAll(`.week-col-${wIndex}`);
@@ -324,7 +328,27 @@
             }
         }
 
-        // ★ 全新智慧截圖功能：永遠只展開最新兩週
+        // ★ 新增：智慧展開邏輯 (僅展開最後兩週)
+        function applySmartExpansion() {
+            const totalWeeks = window.weeksData ? window.weeksData.length : 0;
+            if (totalWeeks === 0) return;
+            for (let i = 0; i < totalWeeks; i++) {
+                const shouldExpand = i >= totalWeeks - 2;
+                setWeekState(i, shouldExpand);
+            }
+        }
+
+        window.toggleAllDetails = function() {
+            if(!window.weeksData || window.weeksData.length === 0) return;
+            
+            const firstCol = document.querySelector('.daily-col');
+            const isHidden = firstCol && firstCol.style.display === 'none';
+            
+            for(let i=0; i<window.weeksData.length; i++) {
+                setWeekState(i, isHidden);
+            }
+        }
+
         window.copyScreenshot = async function() {
             const btn = document.getElementById('screenshot-btn');
             const originalText = btn.innerHTML;
@@ -332,31 +356,31 @@
             
             const wrapper = document.getElementById('table-wrapper');
             const table = document.getElementById('dashboard-table');
-            const totalWeeks = window.weeksData ? window.weeksData.length : 0;
+            const factoryUpper = window.currentFactory.toUpperCase();
             
-            // 1. 紀錄當下的折疊狀態，以便截圖後還原
-            const originalStates = [];
-            for (let i = 0; i < totalWeeks; i++) {
-                const header = document.getElementById(`week-header-${i}`);
-                originalStates.push(header && header.colSpan === 7);
-            }
+            // ★ 動態加入廠區浮水印
+            const watermark = document.createElement('div');
+            watermark.id = "temp-watermark";
+            watermark.innerText = `${factoryUpper} 厂`;
+            watermark.style.position = 'absolute';
+            watermark.style.top = '10px';
+            watermark.style.left = '10px';
+            watermark.style.color = 'rgba(250, 204, 21, 0.8)';
+            watermark.style.fontSize = '36px';
+            watermark.style.fontWeight = '900';
+            watermark.style.letterSpacing = '2px';
+            watermark.style.textShadow = '0 0 10px rgba(0,0,0,0.8)';
+            watermark.style.zIndex = '999';
+            wrapper.style.position = 'relative';
+            wrapper.appendChild(watermark);
 
-            // 2. 智慧排版：最後兩週展開，其餘隱藏
-            for (let i = 0; i < totalWeeks; i++) {
-                const shouldExpand = i >= totalWeeks - 2;
-                setWeekState(i, shouldExpand);
-            }
-            
-            // 備份原本的樣式
             const origOverflow = wrapper.style.overflowX;
             const origWidth = wrapper.style.width;
             
-            // 強制展開讓 html2canvas 可以讀取完整寬度
             wrapper.style.overflowX = 'visible';
             wrapper.style.width = table.scrollWidth + 'px'; 
 
             try {
-                // 等待瀏覽器渲染 DOM 更新完成 (稍微加長確保重排完畢)
                 await new Promise(resolve => setTimeout(resolve, 300));
 
                 const canvas = await html2canvas(wrapper, {
@@ -371,11 +395,11 @@
                     try {
                         const item = new ClipboardItem({ 'image/png': blob });
                         await navigator.clipboard.write([item]);
-                        alert("✅ 看板截图已成功复制！\n👉 截图中已自动为您呈现「最新两周明细 + 历史综合」，请直接打开聊天视窗粘贴发送。");
+                        alert("✅ 看板截图已成功复制！\n👉 截图中已为您加上厂区浮水印，请直接打开聊天视窗粘贴发送。");
                     } catch (err) {
                         console.error(err);
                         const link = document.createElement('a');
-                        link.download = `Dashboard_${window.currentFactory.toUpperCase()}_${new Date().toISOString().split('T')[0]}.png`;
+                        link.download = `Dashboard_${factoryUpper}_${new Date().toISOString().split('T')[0]}.png`;
                         link.href = canvas.toDataURL('image/png');
                         link.click();
                         alert("⚠️ 您的浏览器安全设置不支持直接写入剪贴板。\n已为您自动下载截图文件，请查看下载资料夹！");
@@ -384,12 +408,13 @@
             } catch (e) {
                 alert("❌ 截图过程发生错误: " + e.message);
             } finally {
-                // 3. 瞬間復原使用者的原始排版與狀態
                 wrapper.style.overflowX = origOverflow;
                 wrapper.style.width = origWidth;
-                for (let i = 0; i < totalWeeks; i++) {
-                    setWeekState(i, originalStates[i]);
-                }
+                
+                // 移除浮水印
+                const wm = document.getElementById("temp-watermark");
+                if (wm) wm.remove();
+                
                 btn.innerHTML = originalText;
             }
         }
