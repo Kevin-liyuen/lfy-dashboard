@@ -3,13 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>全局生产线快照看板 (纯 RTDB 安全加强版)</title>
+    <title>全局生产线快照看板 (纯 RTDB 极速版)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        // ★ 只保留 Database，拔除 Auth
         import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
-        // ★ 引入 Firebase Auth 用於安全驗證
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
         const firebaseConfig = {
           apiKey: "AIzaSyAMckSKafxLho2CR5PVe8KLJ6dYAEIJiZI",
@@ -23,28 +22,20 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app); 
-        const auth = getAuth(app); // 初始化 Auth
         const ACCESS_PASSWORD = "888888"; 
         
         let rowDefinitions = []; 
         window.currentFactory = localStorage.getItem('selected_factory') || 'lfy';
         window.weeksData = []; 
 
-        window.checkPassword = async function() {
+        window.checkPassword = function() {
             const pwd = document.getElementById('pwd-input').value;
             if (pwd === ACCESS_PASSWORD) {
                 document.getElementById('login-overlay').style.display = 'none';
                 sessionStorage.setItem('lfy_auth_dash', 'true');
                 document.getElementById('factory-select').value = window.currentFactory;
-                
-                // ★ 密碼正確後，向 Firebase 申請匿名通行證
-                try {
-                    await signInAnonymously(auth);
-                    initDashboardConfig(); 
-                } catch (error) {
-                    console.error("Auth Error:", error);
-                    alert("安全验证失败，请检查网络或联系管理员。");
-                }
+                // ★ 密碼正確直接載入，不經過 Google Auth
+                initDashboardConfig(); 
             } else {
                 alert("密码错误！");
             }
@@ -54,15 +45,7 @@
             if (sessionStorage.getItem('lfy_auth_dash') === 'true') {
                 document.getElementById('login-overlay').style.display = 'none';
                 document.getElementById('factory-select').value = window.currentFactory;
-                
-                // ★ 檢查是否已有通行證，若無則重新申請
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        initDashboardConfig();
-                    } else {
-                        signInAnonymously(auth).then(() => initDashboardConfig()).catch(e => console.error(e));
-                    }
-                });
+                initDashboardConfig(); 
             }
             document.getElementById('pwd-input').addEventListener('keypress', function (e) {
                 if (e.key === 'Enter') window.checkPassword();
@@ -292,7 +275,6 @@
                     }
                 });
 
-                // ★ 資料載入完畢後，預設只展開最後兩週
                 applySmartExpansion();
 
             } finally {
@@ -313,7 +295,6 @@
             header.innerText = isHidden ? `🔽 ${titleText}` : `▶️ ${titleText}`;
         }
 
-        // 輔助函數：控制指定週的展開/隱藏
         function setWeekState(wIndex, expand) {
             const cols = document.querySelectorAll(`.week-col-${wIndex}`);
             const header = document.getElementById(`week-header-${wIndex}`);
@@ -328,7 +309,6 @@
             }
         }
 
-        // ★ 新增：智慧展開邏輯 (僅展開最後兩週)
         function applySmartExpansion() {
             const totalWeeks = window.weeksData ? window.weeksData.length : 0;
             if (totalWeeks === 0) return;
@@ -358,7 +338,6 @@
             const table = document.getElementById('dashboard-table');
             const factoryUpper = window.currentFactory.toUpperCase();
             
-            // ★ 動態加入廠區浮水印
             const watermark = document.createElement('div');
             watermark.id = "temp-watermark";
             watermark.innerText = `${factoryUpper} 厂`;
@@ -411,7 +390,6 @@
                 wrapper.style.overflowX = origOverflow;
                 wrapper.style.width = origWidth;
                 
-                // 移除浮水印
                 const wm = document.getElementById("temp-watermark");
                 if (wm) wm.remove();
                 
